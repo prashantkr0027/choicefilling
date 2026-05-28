@@ -1,7 +1,7 @@
 import React from 'react';
 import { NavLink } from 'react-router-dom';
 
-export default function Navbar({ totalRows, priorityCount, currentUser, onSwitchUser }) {
+export default function Navbar({ priorityCount }) {
   const navLinkClass = ({ isActive }) =>
     `px-3 py-1.5 rounded-lg text-sm font-medium transition-all duration-200 ${
       isActive
@@ -38,7 +38,7 @@ export default function Navbar({ totalRows, priorityCount, currentUser, onSwitch
           </NavLink>
         </nav>
 
-        {/* Right: user pill + external link */}
+        {/* Right: external link */}
         <div className="flex items-center gap-3">
           <a
             href="https://josaa.admissions.nic.in"
@@ -48,22 +48,6 @@ export default function Navbar({ totalRows, priorityCount, currentUser, onSwitch
           >
             josaa.admissions.nic.in ↗
           </a>
-
-          {currentUser && (
-            <div className="flex items-center gap-2 pl-3 border-l border-slate-800">
-              <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-800/80 border border-slate-700/50">
-                <span className="text-[11px] text-slate-400">👤</span>
-                <span className="text-xs font-semibold text-slate-200">{currentUser}</span>
-              </div>
-              <button
-                onClick={onSwitchUser}
-                title="Switch user"
-                className="px-2 py-1 rounded-lg text-[10px] text-slate-500 hover:text-slate-300 hover:bg-slate-800 transition-colors"
-              >
-                Switch
-              </button>
-            </div>
-          )}
         </div>
       </div>
     </header>

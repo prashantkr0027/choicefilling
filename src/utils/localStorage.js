@@ -1,21 +1,12 @@
 /**
- * localStorage.js — user identity only.
+ * localStorage.js
  *
+ * Previously used to persist choices and the selected user name.
  * Choices are now stored exclusively in Supabase.
- * This file only persists the selected user name so the picker
- * is skipped on subsequent visits.
+ * The user is hardcoded to "prashant" — no user selection needed.
+ *
+ * This file is kept as a placeholder. The one-time migration logic that
+ * read the old josaa_choices key lives in App.jsx (migrateFromLocalStorage).
  */
 
-const USER_KEY = 'josaa_user';
-
-export function saveUser(name) {
-  localStorage.setItem(USER_KEY, name);
-}
-
-export function loadUser() {
-  return localStorage.getItem(USER_KEY) ?? null;
-}
-
-export function clearUser() {
-  localStorage.removeItem(USER_KEY);
-}
+// No exports — nothing needs to be persisted locally anymore.
