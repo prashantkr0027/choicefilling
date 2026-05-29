@@ -28,11 +28,15 @@ const DEFAULT_FILTERS = {
   quota:         'All',
   gender:        'All',
   instituteType: 'All',
+  // Rank range filter
+  minRank:   '',
+  maxRank:   '',
+  rankRound: 'Round 6',
 };
 
 const PAGE_SIZE = 60;
 
-export default function HomePage({ priorityList, onAdd, onRemove, onClear, onReorder }) {
+export default function HomePage({ priorityList, onAdd, onRemove, onClear, onReorder, userRank, onRankChange }) {
   const isMobile = useIsMobile();
 
   const [allRows,        setAllRows]        = useState([]);
@@ -53,6 +57,20 @@ export default function HomePage({ priorityList, onAdd, onRemove, onClear, onReo
       })
       .finally(() => setIsLoading(false));
   }, []);
+
+  // Auto-fill rank range when userRank loads (only if range not already set)
+  useEffect(() => {
+    if (userRank) {
+      const rank = parseInt(String(userRank), 10);
+      if (!isNaN(rank) && rank > 0) {
+        setFilters((prev) => ({
+          ...prev,
+          minRank: prev.minRank || String(Math.max(1, rank - 500)),
+          maxRank: prev.maxRank || String(rank + 500),
+        }));
+      }
+    }
+  }, [userRank]);
 
   useEffect(() => { setPage(1); }, [filters, allRows]);
 
@@ -82,6 +100,18 @@ export default function HomePage({ priorityList, onAdd, onRemove, onClear, onReo
       }
       if (filters.quota  !== 'All' && item.quota  !== filters.quota)  return false;
       if (filters.gender !== 'All' && item.gender !== filters.gender)  return false;
+
+      // ── Rank range filter (based on selected round's closing rank) ──
+      const hasRankFilter = filters.minRank || filters.maxRank;
+      if (hasRankFilter) {
+        const roundData = item.rounds?.[filters.rankRound];
+        if (!roundData?.closingRank) return false;  // no data for this round
+        const cr = parseInt(String(roundData.closingRank).replace(/[^0-9]/g, ''), 10);
+        if (isNaN(cr)) return false;
+        if (filters.minRank && cr < parseInt(filters.minRank, 10)) return false;
+        if (filters.maxRank && cr > parseInt(filters.maxRank, 10)) return false;
+      }
+
       return true;
     });
   }, [groupedItems, filters]);
@@ -106,6 +136,7 @@ export default function HomePage({ priorityList, onAdd, onRemove, onClear, onReo
     if (filters.gender        !== 'All') count++;
     if (filters.institute.trim())        count++;
     if (filters.branch.trim())           count++;
+    if (filters.minRank || filters.maxRank) count++;
     return count;
   }, [filters]);
 
@@ -204,7 +235,13 @@ export default function HomePage({ priorityList, onAdd, onRemove, onClear, onReo
                   </button>
                 </div>
               )}
-              <FilterBar groupedItems={groupedItems} filters={filters} onFilterChange={handleFilterChange} />
+              <FilterBar
+                groupedItems={groupedItems}
+                filters={filters}
+                onFilterChange={handleFilterChange}
+                userRank={userRank}
+                onRankChange={onRankChange}
+              />
             </div>
           </div>
         )}
@@ -260,6 +297,8 @@ export default function HomePage({ priorityList, onAdd, onRemove, onClear, onReo
                   isAdded={priorityIds.has(item.id)}
                   activeRound={filters.round}
                   isMobile={isMobile}
+                  userRank={userRank}
+                  compareRound={filters.rankRound}
                 />
               ))}
             </div>

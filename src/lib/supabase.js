@@ -8,19 +8,18 @@
  *   -- Drop old table (had UUID PK — incompatible with shared text key):
  *   DROP TABLE IF EXISTS choices;
  *
- *   -- Recreate with TEXT primary key so we can store both UUIDs and
- *   -- hardcoded shared keys like 'shared-prashant-anshul'.
+ *   -- Recreate with TEXT primary key + user_rank column:
  *   CREATE TABLE choices (
  *     user_id         TEXT        PRIMARY KEY,
  *     preference_list JSONB       NOT NULL DEFAULT '[]',
+ *     user_rank       INTEGER,
  *     updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
  *   );
  *
+ *   -- If table already exists, just add the rank column:
+ *   ALTER TABLE choices ADD COLUMN IF NOT EXISTS user_rank INTEGER;
+ *
  *   -- Row-Level Security:
- *   --   • Each user can always access their own UUID row.
- *   --   • ANY authenticated user can also access the shared row.
- *   --     (Access to the shared row is controlled by app logic —
- *   --      only the two whitelisted emails are ever routed there.)
  *   ALTER TABLE choices ENABLE ROW LEVEL SECURITY;
  *
  *   CREATE POLICY "own_or_shared_row" ON choices
@@ -122,27 +121,31 @@ export async function signOut() {
 // ── Choices helpers ───────────────────────────────────────────────────────────
 
 /**
- * Fetch the stored preference list for a storage key.
- * Returns [] if the row does not exist yet.
+ * Fetch the stored preference list + user rank for a storage key.
+ * Returns { preferenceList: [], userRank: null } if row does not exist.
  *
  * @param {string} storageKey  — resolveStorageKey(user) output
- * @returns {Promise<Array>}
+ * @returns {Promise<{ preferenceList: Array, userRank: number|null }>}
  */
 export async function fetchChoices(storageKey) {
   const { data, error } = await supabase
     .from('choices')
-    .select('preference_list')
+    .select('preference_list, user_rank')
     .eq('user_id', storageKey)
     .maybeSingle();
 
   if (error) throw error;
-  return Array.isArray(data?.preference_list) ? data.preference_list : [];
+  return {
+    preferenceList: Array.isArray(data?.preference_list) ? data.preference_list : [],
+    userRank:       data?.user_rank ?? null,
+  };
 }
 
 /**
  * Upsert the full preference list for a storage key.
+ * NEVER modifies user_rank.
  *
- * @param {string} storageKey  — resolveStorageKey(user) output
+ * @param {string} storageKey
  * @param {Array}  list
  * @returns {Promise<void>}
  */
@@ -162,11 +165,40 @@ export async function upsertChoices(storageKey, list) {
 }
 
 /**
+ * Save (upsert) the user's JEE rank.
+ * ONLY updates user_id + user_rank + updated_at — preference_list is NEVER touched.
+ *
+ * PostgreSQL ON CONFLICT DO UPDATE only sets the columns you include in the
+ * payload, so preference_list is left untouched even if the row already exists.
+ *
+ * @param {string}      storageKey
+ * @param {number|null} rank  — pass null to clear
+ * @returns {Promise<void>}
+ */
+export async function saveRank(storageKey, rank) {
+  const { error } = await supabase
+    .from('choices')
+    .upsert(
+      {
+        user_id:    storageKey,
+        user_rank:  rank ?? null,
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: 'user_id' }
+    );
+
+  if (error) throw error;
+}
+
+/**
  * Subscribe to Realtime postgres_changes for a storage key's row.
  * Returns the channel — pass to supabase.removeChannel() to unsubscribe.
  *
- * @param {string}                storageKey
- * @param {(list: Array) => void} onUpdate
+ * The callback receives { preferenceList, userRank } — either field may be
+ * undefined if that column was not changed in the triggering event.
+ *
+ * @param {string} storageKey
+ * @param {(update: { preferenceList?: Array, userRank?: number|null }) => void} onUpdate
  * @returns {import('@supabase/supabase-js').RealtimeChannel}
  */
 export function subscribeToChoices(storageKey, onUpdate) {
@@ -181,8 +213,11 @@ export function subscribeToChoices(storageKey, onUpdate) {
         filter: `user_id=eq.${storageKey}`,
       },
       (payload) => {
-        const newList = payload.new?.preference_list;
-        if (Array.isArray(newList)) onUpdate(newList);
+        const row = payload.new ?? {};
+        onUpdate({
+          preferenceList: Array.isArray(row.preference_list) ? row.preference_list : undefined,
+          userRank:       'user_rank' in row ? row.user_rank : undefined,
+        });
       }
     )
     .subscribe((status) => {

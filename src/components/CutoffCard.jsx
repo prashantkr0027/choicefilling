@@ -38,12 +38,60 @@ function abbrevRound(round) {
   return round.replace(/round\s*/i, 'R');
 }
 
-// ── Shared card body (presentation only, no DnD) ─────────────────────────────
+// ── Rank status computation ───────────────────────────────────────────────────
+//
+// Compares item's closing rank for `compareRound` against the user's rank.
+// Lower rank number = better (JEE convention).
+//
+// 🟢 safe       — CR > userRank * 1.15  (well above your rank → safe to apply)
+// 🟡 borderline — userRank < CR ≤ userRank * 1.15  (close to your rank)
+// 🔴 reach      — CR < userRank  (cutoff better than your rank → hard to get)
 
-function CardBody({ item, onAdd, isAdded, activeRound, isMobile }) {
+function getRankStatus(item, compareRound, userRank) {
+  if (!userRank || !compareRound) return null;
+  const roundData = item.rounds?.[compareRound];
+  if (!roundData?.closingRank) return null;
+
+  const cr = parseInt(String(roundData.closingRank).replace(/[^0-9]/g, ''), 10);
+  const ur = parseInt(String(userRank), 10);
+  if (isNaN(cr) || isNaN(ur) || ur <= 0) return null;
+
+  if (cr < ur)          return 'reach';       // 🔴
+  if (cr <= ur * 1.15)  return 'borderline';  // 🟡
+  return 'safe';                               // 🟢
+}
+
+const RANK_STATUS_CONFIG = {
+  safe:       {
+    border: 'border-emerald-500/70',
+    bg:     'bg-emerald-950/25',
+    badge:  'bg-emerald-500/20 text-emerald-300',
+    emoji:  '🟢',
+    label:  'Safe',
+  },
+  borderline: {
+    border: 'border-yellow-500/70',
+    bg:     'bg-yellow-950/20',
+    badge:  'bg-yellow-500/20 text-yellow-300',
+    emoji:  '🟡',
+    label:  'Borderline',
+  },
+  reach:      {
+    border: 'border-red-500/70',
+    bg:     'bg-red-950/20',
+    badge:  'bg-red-500/20 text-red-300',
+    emoji:  '🔴',
+    label:  'Reach',
+  },
+};
+
+// ── Shared card body (presentation, no DnD) ───────────────────────────────────
+
+function CardBody({ item, onAdd, isAdded, activeRound, isMobile, rankStatus }) {
   const quotaClass     = QUOTA_COLORS[item.quota] ?? 'bg-slate-600/40 text-slate-400 border-slate-600/40';
   const rounds         = sortedRoundEntries(item.rounds || {});
   const highlightRound = activeRound && activeRound !== 'All' ? activeRound : null;
+  const rankCfg        = rankStatus ? RANK_STATUS_CONFIG[rankStatus] : null;
 
   return (
     <div className="p-3 sm:p-4">
@@ -62,6 +110,14 @@ function CardBody({ item, onAdd, isAdded, activeRound, isMobile }) {
         <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${getSeatColor(item.seatType)}`}>
           {item.seatType}
         </span>
+
+        {/* Rank status badge */}
+        {rankCfg && (
+          <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full ${rankCfg.badge}`}>
+            {rankCfg.emoji} {rankCfg.label}
+          </span>
+        )}
+
         <span className="text-[10px] text-slate-500 ml-auto" title={item.gender}>
           {item.gender === 'Gender-Neutral' ? '⚥ Neutral' : '♀ Female'}
         </span>
@@ -106,7 +162,7 @@ function CardBody({ item, onAdd, isAdded, activeRound, isMobile }) {
         })}
       </div>
 
-      {/* Add button — bigger tap target on mobile */}
+      {/* Add button */}
       <button
         onClick={(e) => { e.stopPropagation(); onAdd(item); }}
         disabled={isAdded}
@@ -126,9 +182,25 @@ function CardBody({ item, onAdd, isAdded, activeRound, isMobile }) {
   );
 }
 
+// ── Border/bg classes based on state ─────────────────────────────────────────
+
+function resolveCardClass({ isDragging = false, isAdded, rankStatus }) {
+  if (isDragging) {
+    return 'border-indigo-400 shadow-xl shadow-indigo-500/30';
+  }
+  if (isAdded) {
+    return 'border-emerald-500/40 bg-emerald-950/20';
+  }
+  if (rankStatus && RANK_STATUS_CONFIG[rankStatus]) {
+    const cfg = RANK_STATUS_CONFIG[rankStatus];
+    return `${cfg.border} ${cfg.bg}`;
+  }
+  return 'border-slate-700/60 bg-slate-800/60';
+}
+
 // ── Desktop card — uses useDraggable, MUST only render inside DndContext ───────
 
-function DesktopCutoffCard({ item, onAdd, isAdded, activeRound }) {
+function DesktopCutoffCard({ item, onAdd, isAdded, activeRound, rankStatus }) {
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
     id:   `draggable-${item.id}`,
     data: { item },
@@ -140,6 +212,8 @@ function DesktopCutoffCard({ item, onAdd, isAdded, activeRound }) {
     opacity:   isDragging ? 0.5 : 1,
   };
 
+  const cardClass = resolveCardClass({ isDragging, isAdded, rankStatus });
+
   return (
     <div
       ref={setNodeRef}
@@ -149,50 +223,58 @@ function DesktopCutoffCard({ item, onAdd, isAdded, activeRound }) {
       className={`
         relative rounded-xl border transition-all duration-200
         cursor-grab active:cursor-grabbing touch-none
-        ${isDragging
-          ? 'border-indigo-400 shadow-xl shadow-indigo-500/30'
-          : isAdded
-            ? 'border-emerald-500/40 bg-emerald-950/20 hover:border-emerald-400/60'
-            : 'border-slate-700/60 bg-slate-800/60 hover:border-indigo-500/50 hover:bg-slate-800/80 hover:shadow-lg hover:shadow-indigo-500/10'
-        }
+        hover:shadow-lg hover:shadow-indigo-500/10
+        ${cardClass}
       `}
     >
-      <CardBody item={item} onAdd={onAdd} isAdded={isAdded} activeRound={activeRound} isMobile={false} />
+      <CardBody
+        item={item} onAdd={onAdd} isAdded={isAdded}
+        activeRound={activeRound} isMobile={false} rankStatus={rankStatus}
+      />
     </div>
   );
 }
 
-// ── Mobile card — plain div, no drag, prominent tap button ────────────────────
+// ── Mobile card — plain div, no drag ─────────────────────────────────────────
 
-function MobileCutoffCard({ item, onAdd, isAdded, activeRound }) {
+function MobileCutoffCard({ item, onAdd, isAdded, activeRound, rankStatus }) {
+  const cardClass = resolveCardClass({ isAdded, rankStatus });
+
   return (
-    <div
-      className={`
-        relative rounded-xl border transition-colors duration-150
-        ${isAdded
-          ? 'border-emerald-500/40 bg-emerald-950/20'
-          : 'border-slate-700/60 bg-slate-800/60 active:bg-slate-800'
-        }
-      `}
-    >
-      <CardBody item={item} onAdd={onAdd} isAdded={isAdded} activeRound={activeRound} isMobile={true} />
+    <div className={`relative rounded-xl border transition-colors duration-150 ${cardClass}`}>
+      <CardBody
+        item={item} onAdd={onAdd} isAdded={isAdded}
+        activeRound={activeRound} isMobile={true} rankStatus={rankStatus}
+      />
     </div>
   );
 }
 
-// ── Public export — routes to desktop or mobile variant ───────────────────────
-//
-// DesktopCutoffCard (calls useDraggable) is only ever *mounted* inside a
-// DndContext, so the hook is always called in a valid context.
-// MobileCutoffCard is mounted outside any DndContext — no hooks issue.
+// ── Public export ─────────────────────────────────────────────────────────────
 
-export default function CutoffCard({ item, onAdd, isAdded, activeRound, isMobile }) {
+export default function CutoffCard({
+  item,
+  onAdd,
+  isAdded,
+  activeRound,
+  isMobile,
+  userRank,
+  compareRound,
+}) {
+  const rankStatus = getRankStatus(item, compareRound, userRank);
+
   if (isMobile) {
     return (
-      <MobileCutoffCard item={item} onAdd={onAdd} isAdded={isAdded} activeRound={activeRound} />
+      <MobileCutoffCard
+        item={item} onAdd={onAdd} isAdded={isAdded}
+        activeRound={activeRound} rankStatus={rankStatus}
+      />
     );
   }
   return (
-    <DesktopCutoffCard item={item} onAdd={onAdd} isAdded={isAdded} activeRound={activeRound} />
+    <DesktopCutoffCard
+      item={item} onAdd={onAdd} isAdded={isAdded}
+      activeRound={activeRound} rankStatus={rankStatus}
+    />
   );
 }

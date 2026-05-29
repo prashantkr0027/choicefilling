@@ -43,6 +43,7 @@ import {
   subscribeToChoices,
   resolveStorageKey,
   SHARED_KEY,
+  saveRank,
 } from './lib/supabase';
 
 // ── Legacy localStorage keys (one-time migration) ─────────────────────────────
@@ -67,10 +68,12 @@ export default function App() {
   const [appState,     setAppState]     = useState('checking');
   const [authUser,     setAuthUser]     = useState(null);
   const [priorityList, setPriorityList] = useState([]);
+  const [userRank,     setUserRank]     = useState(null);
   const [loadError,    setLoadError]    = useState(null);
 
   const [syncToast, setSyncToast] = useState(false);
-  const toastTimerRef = useRef(null);
+  const toastTimerRef    = useRef(null);
+  const rankSaveTimerRef = useRef(null);
 
   // Always-current refs — no stale closures in callbacks
   const priorityListRef = useRef([]);
@@ -114,8 +117,10 @@ export default function App() {
           hasBootedRef.current = false;
           setAuthUser(null);
           setPriorityList([]);
+          setUserRank(null);
           setSyncToast(false);
           clearTimeout(toastTimerRef.current);
+          clearTimeout(rankSaveTimerRef.current);
           setAppState('unauthenticated');
         }
 
@@ -126,6 +131,7 @@ export default function App() {
     return () => {
       subscription.unsubscribe();
       clearTimeout(toastTimerRef.current);
+      clearTimeout(rankSaveTimerRef.current);
     };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -161,7 +167,8 @@ export default function App() {
           '— showing app with current list.'
         );
       } else {
-        setPriorityList(result);
+        setPriorityList(result.preferenceList);
+        if (result.userRank !== null) setUserRank(result.userRank);
       }
 
       setAppState('ready');
@@ -196,15 +203,21 @@ export default function App() {
     if (appState !== 'ready' || !authUser) return;
 
     const storageKey = storageKeyRef.current;
-    const channel = subscribeToChoices(storageKey, (incomingList) => {
-      if (JSON.stringify(incomingList) === JSON.stringify(priorityListRef.current)) return;
-
-      console.info('[Realtime] Remote update — applying to UI');
-      setPriorityList(incomingList);
-
-      clearTimeout(toastTimerRef.current);
-      setSyncToast(true);
-      toastTimerRef.current = setTimeout(() => setSyncToast(false), 2500);
+    const channel = subscribeToChoices(storageKey, ({ preferenceList, userRank: remoteRank }) => {
+      // — Preference list update —
+      if (preferenceList !== undefined) {
+        if (JSON.stringify(preferenceList) !== JSON.stringify(priorityListRef.current)) {
+          console.info('[Realtime] Remote preference_list update — applying to UI');
+          setPriorityList(preferenceList);
+          clearTimeout(toastTimerRef.current);
+          setSyncToast(true);
+          toastTimerRef.current = setTimeout(() => setSyncToast(false), 2500);
+        }
+      }
+      // — Rank update —
+      if (remoteRank !== undefined) {
+        setUserRank(remoteRank);
+      }
     });
 
     return () => {
@@ -222,6 +235,26 @@ export default function App() {
     } catch (err) {
       console.warn('[App] Sync failed:', err.message);
     }
+  }, []);
+
+  // ── Rank save — debounced 800 ms ────────────────────────────────────────
+  const handleRankChange = useCallback((newRank) => {
+    // Update local state immediately for responsive UI
+    const rankNum = newRank ? parseInt(String(newRank), 10) : null;
+    setUserRank(isNaN(rankNum) ? null : rankNum);
+
+    // Debounce the Supabase write
+    clearTimeout(rankSaveTimerRef.current);
+    rankSaveTimerRef.current = setTimeout(async () => {
+      const storageKey = storageKeyRef.current;
+      if (!storageKey) return;
+      try {
+        await saveRank(storageKey, isNaN(rankNum) ? null : rankNum);
+        console.info('[App] Rank saved:', rankNum);
+      } catch (err) {
+        console.warn('[App] Rank save failed:', err.message);
+      }
+    }, 800);
   }, []);
 
   // ── Mutations ─────────────────────────────────────────────────────────────
@@ -326,6 +359,8 @@ export default function App() {
               onRemove={handleRemove}
               onClear={handleClear}
               onReorder={handleReorder}
+              userRank={userRank}
+              onRankChange={handleRankChange}
             />
           }
         />
