@@ -3,21 +3,31 @@
  *
  * Supabase client + typed helpers for the `choices` table.
  *
- * Table schema (run once in Supabase SQL editor):
- * ─────────────────────────────────────────────────
+ * ── Table schema (run once in Supabase SQL editor) ───────────────────────────
+ *
+ *   -- Drop old table first if you had the user_name TEXT version:
+ *   DROP TABLE IF EXISTS choices;
+ *
  *   CREATE TABLE choices (
- *     user_name       TEXT        PRIMARY KEY,
+ *     user_id         UUID        PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
  *     preference_list JSONB       NOT NULL DEFAULT '[]',
  *     updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
  *   );
  *
- *   -- Allow anon read/write
+ *   -- Row-Level Security: each user can only touch their own row
  *   ALTER TABLE choices ENABLE ROW LEVEL SECURITY;
- *   CREATE POLICY "allow_all" ON choices FOR ALL USING (true) WITH CHECK (true);
+ *   CREATE POLICY "own_row" ON choices
+ *     FOR ALL
+ *     USING  (auth.uid() = user_id)
+ *     WITH CHECK (auth.uid() = user_id);
  *
- *   -- Enable Realtime for this table (required for subscribeToChoices)
+ *   -- Enable Realtime
  *   ALTER PUBLICATION supabase_realtime ADD TABLE choices;
- * ─────────────────────────────────────────────────
+ *
+ * ── Supabase dashboard: Authentication → Providers → Google ─────────────────
+ *   Enable Google, add Client ID + Secret, set redirect URL:
+ *     https://<your-project>.supabase.co/auth/v1/callback
+ * ─────────────────────────────────────────────────────────────────────────────
  */
 
 import { createClient } from '@supabase/supabase-js';
@@ -34,94 +44,98 @@ if (!supabaseUrl || !supabaseKey) {
 
 export const supabase = createClient(supabaseUrl ?? '', supabaseKey ?? '');
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
+// ── Auth helpers ──────────────────────────────────────────────────────────────
 
 /**
- * Fetch the stored preference list for a user.
+ * Trigger Google OAuth sign-in. Redirects to Google and back.
+ */
+export async function signInWithGoogle() {
+  const { error } = await supabase.auth.signInWithOAuth({
+    provider: 'google',
+    options: { redirectTo: window.location.origin },
+  });
+  if (error) throw error;
+}
+
+/**
+ * Sign out the current user.
+ */
+export async function signOut() {
+  const { error } = await supabase.auth.signOut();
+  if (error) throw error;
+}
+
+// ── Choices helpers ───────────────────────────────────────────────────────────
+
+/**
+ * Fetch the stored preference list for an authenticated user.
  * Returns [] if the user has no row yet.
  *
- * @param {string} userName
+ * @param {string} userId  — auth user UUID
  * @returns {Promise<Array>}
  */
-export async function fetchChoices(userName) {
+export async function fetchChoices(userId) {
   const { data, error } = await supabase
     .from('choices')
     .select('preference_list')
-    .eq('user_name', userName)
-    .maybeSingle(); // returns null (not an error) when no row exists
+    .eq('user_id', userId)
+    .maybeSingle();
 
   if (error) throw error;
   return Array.isArray(data?.preference_list) ? data.preference_list : [];
 }
 
 /**
- * Upsert the full preference list for a user.
- * Inserts a new row if none exists; updates if one does.
+ * Upsert the full preference list for an authenticated user.
  *
- * @param {string} userName
+ * @param {string} userId  — auth user UUID
  * @param {Array}  list
  * @returns {Promise<void>}
  */
-export async function upsertChoices(userName, list) {
+export async function upsertChoices(userId, list) {
   const { error } = await supabase
     .from('choices')
     .upsert(
       {
-        user_name:       userName,
+        user_id:         userId,
         preference_list: list,
         updated_at:      new Date().toISOString(),
       },
-      { onConflict: 'user_name' }
+      { onConflict: 'user_id' }
     );
 
   if (error) throw error;
 }
 
 /**
- * Subscribe to Realtime postgres_changes on the choices table,
- * filtered to a single user's row.
+ * Subscribe to Realtime postgres_changes for a user's row.
+ * Returns the channel — pass to supabase.removeChannel() to unsubscribe.
  *
- * The `onUpdate` callback receives the incoming preference_list whenever
- * an INSERT or UPDATE is committed to the database (from any device/tab).
- *
- * Prerequisite in Supabase dashboard:
- *   ALTER PUBLICATION supabase_realtime ADD TABLE choices;
- *   (or toggle the table on in Table Editor → Realtime)
- *
- * @param {string}               userName
- * @param {(list: Array) => void} onUpdate  called with the new list on each change
+ * @param {string}               userId
+ * @param {(list: Array) => void} onUpdate
  * @returns {import('@supabase/supabase-js').RealtimeChannel}
- *   Pass the returned channel to supabase.removeChannel() to unsubscribe.
  */
-export function subscribeToChoices(userName, onUpdate) {
+export function subscribeToChoices(userId, onUpdate) {
   const channel = supabase
-    .channel(`choices-${userName}`) // unique channel name per user
+    .channel(`choices-${userId}`)
     .on(
       'postgres_changes',
       {
-        event:  '*',                         // catches INSERT, UPDATE, DELETE
+        event:  '*',
         schema: 'public',
         table:  'choices',
-        filter: `user_name=eq.${userName}`,  // server-side row filter
+        filter: `user_id=eq.${userId}`,
       },
       (payload) => {
-        // DELETE events have an empty payload.new — skip them
         const newList = payload.new?.preference_list;
-        if (Array.isArray(newList)) {
-          onUpdate(newList);
-        }
+        if (Array.isArray(newList)) onUpdate(newList);
       }
     )
     .subscribe((status) => {
       if (status === 'SUBSCRIBED') {
-        console.info(`[Realtime] ✓ Subscribed to choices for "${userName}"`);
+        console.info(`[Realtime] ✓ Subscribed to choices for user ${userId.slice(0, 8)}…`);
       } else if (status === 'CHANNEL_ERROR') {
-        console.warn(
-          `[Realtime] Channel error for "${userName}". ` +
-          'Ensure Realtime is enabled: ALTER PUBLICATION supabase_realtime ADD TABLE choices;'
-        );
-      } else {
-        console.debug(`[Realtime] Status for "${userName}": ${status}`);
+        console.warn('[Realtime] Channel error — ensure Realtime is enabled on the choices table.');
       }
     });
 

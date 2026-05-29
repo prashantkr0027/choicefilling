@@ -1,7 +1,7 @@
 import React from 'react';
 import { NavLink } from 'react-router-dom';
 
-export default function Navbar({ priorityCount }) {
+export default function Navbar({ priorityCount, userEmail, onLogout }) {
   const navLinkClass = ({ isActive }) =>
     `px-3 py-1.5 rounded-lg text-sm font-medium transition-all duration-200 ${
       isActive
@@ -38,16 +38,36 @@ export default function Navbar({ priorityCount }) {
           </NavLink>
         </nav>
 
-        {/* Right: external link */}
+        {/* Right: user + logout */}
         <div className="flex items-center gap-3">
           <a
             href="https://josaa.admissions.nic.in"
             target="_blank"
             rel="noopener noreferrer"
-            className="text-xs text-slate-600 hover:text-slate-400 transition-colors hidden lg:inline"
+            className="text-xs text-slate-600 hover:text-slate-400 transition-colors hidden xl:inline"
           >
             josaa.admissions.nic.in ↗
           </a>
+
+          {userEmail && (
+            <div className="flex items-center gap-2 pl-3 border-l border-slate-800">
+              {/* Avatar initial */}
+              <div className="w-7 h-7 rounded-full bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center text-xs font-bold text-white flex-shrink-0 shadow-md shadow-indigo-500/30">
+                {userEmail[0].toUpperCase()}
+              </div>
+              {/* Email — hidden on very small screens */}
+              <span className="text-xs text-slate-400 hidden sm:inline max-w-[160px] truncate">
+                {userEmail}
+              </span>
+              <button
+                onClick={onLogout}
+                title="Sign out"
+                className="px-2.5 py-1 rounded-lg text-[11px] font-medium text-slate-400 hover:text-slate-100 hover:bg-slate-800 border border-transparent hover:border-slate-700 transition-all duration-150"
+              >
+                Sign out
+              </button>
+            </div>
+          )}
         </div>
       </div>
     </header>

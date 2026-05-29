@@ -1,116 +1,154 @@
 /**
  * App.jsx
  *
- * User is always "prashant" — no login screen, no user picker.
- * Supabase is the sole source of truth for choices.
+ * Auth flow (powered by Supabase Google OAuth):
  *
- * Boot sequence:
- *  1. Migrate any legacy josaa_choices data from localStorage → Supabase (once, then deleted).
- *  2. Fetch current preference_list from Supabase for user "prashant".
- *  3. Subscribe to Realtime postgres_changes for that row.
+ *   mount
+ *    └─ onAuthStateChange listener registered
+ *        ├─ INITIAL_SESSION, session=null  → 'unauthenticated' (show LoginScreen)
+ *        ├─ INITIAL_SESSION, session=user  → boot(user)
+ *        ├─ SIGNED_IN                      → boot(user)   (OAuth callback return)
+ *        └─ SIGNED_OUT                     → 'unauthenticated'
+ *
+ *   boot(user):
+ *    ├─ migrateFromLocalStorage(user.id)  ← one-shot, then legacy keys deleted
+ *    ├─ fetchChoices(user.id)             ← load from Supabase
+ *    └─ setAppState('ready')              ← triggers Realtime subscription
  *
  * Mutation contract:
- *  - priorityListRef is always current — no stale closures in callbacks.
- *  - setPriorityList updates in-memory state immediately.
- *  - syncToCloud upserts as a fire-and-forget side-effect.
+ *   priorityListRef is always current → no stale closures.
+ *   setPriorityList updates UI immediately; syncToCloud is fire-and-forget.
  *
  * Realtime:
- *  - Self-echoes (our own upserts bouncing back) are suppressed by JSON comparison.
- *  - Genuine remote changes show a "Synced from another device" toast for 2.5 s.
- *  - Channel is removed on unmount.
+ *   Self-echoes suppressed by JSON comparison.
+ *   Genuine remote changes show a "Synced from another device" toast.
+ *   Channel removed on unmount / sign-out.
  */
 
 import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { Routes, Route } from 'react-router-dom';
 
-import Navbar      from './components/Navbar';
-import HomePage    from './pages/HomePage';
-import ChoicesPage from './pages/ChoicesPage';
-import { supabase, fetchChoices, upsertChoices, subscribeToChoices } from './lib/supabase';
+import Navbar       from './components/Navbar';
+import LoginScreen  from './components/LoginScreen';
+import HomePage     from './pages/HomePage';
+import ChoicesPage  from './pages/ChoicesPage';
+import {
+  supabase,
+  signOut,
+  fetchChoices,
+  upsertChoices,
+  subscribeToChoices,
+} from './lib/supabase';
 
-// ── Hardcoded user ────────────────────────────────────────────────────────────
-const USER = 'prashant';
-
-// ── Legacy localStorage keys to clean up during migration ────────────────────
+// ── Legacy localStorage keys (one-time migration) ─────────────────────────────
 const LEGACY_CHOICES_KEY = 'josaa_choices';
 const LEGACY_VERSION_KEY = 'josaa_choices_version';
 const LEGACY_USER_KEY    = 'josaa_user';
 
 // ── App states ────────────────────────────────────────────────────────────────
-// 'loading' → migrating + fetching from Supabase
-// 'ready'   → normal app + Realtime active
-// 'error'   → Supabase fetch failed
+// 'checking'       → waiting for INITIAL_SESSION from Supabase
+// 'unauthenticated'→ no session — show LoginScreen
+// 'loading'        → authenticated, fetching choices from Supabase
+// 'ready'          → normal app + Realtime active
+// 'error'          → fetch failed after auth
 
 export default function App() {
-  const [appState,     setAppState]     = useState('loading');
+  const [appState,     setAppState]     = useState('checking');
+  const [authUser,     setAuthUser]     = useState(null);   // supabase User object
   const [priorityList, setPriorityList] = useState([]);
   const [loadError,    setLoadError]    = useState(null);
 
-  // Sync toast — appears briefly when a remote Realtime update arrives
+  // Sync toast — shown when a remote Realtime update arrives
   const [syncToast, setSyncToast]  = useState(false);
   const toastTimerRef = useRef(null);
 
-  // Ref always holds the latest list — eliminates stale closures in callbacks
+  // Always-current refs — eliminate stale closures in callbacks
   const priorityListRef = useRef([]);
+  const authUserRef     = useRef(null);
   priorityListRef.current = priorityList;
+  authUserRef.current     = authUser;
 
-  // ── Boot ──────────────────────────────────────────────────────────────────
+  // Guard: prevent boot() from running twice for the same sign-in event
+  const bootingRef = useRef(false);
+
+  // ── Auth listener ────────────────────────────────────────────────────────────
   useEffect(() => {
-    boot();
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      async (event, session) => {
+        if (
+          (event === 'INITIAL_SESSION' || event === 'SIGNED_IN') &&
+          session?.user
+        ) {
+          if (!bootingRef.current) {
+            await boot(session.user);
+          }
+        } else if (event === 'INITIAL_SESSION' && !session) {
+          setAppState('unauthenticated');
+        } else if (event === 'SIGNED_OUT') {
+          bootingRef.current = false;
+          setAuthUser(null);
+          setPriorityList([]);
+          setAppState('unauthenticated');
+        }
+      }
+    );
+
+    return () => {
+      subscription.unsubscribe();
+      clearTimeout(toastTimerRef.current);
+    };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  async function boot() {
+  // ── Boot after authentication ─────────────────────────────────────────────
+  async function boot(user) {
+    bootingRef.current = true;
+    setAuthUser(user);
     setAppState('loading');
     setLoadError(null);
     try {
-      await migrateFromLocalStorage(); // no-op if no legacy data
-      const list = await fetchChoices(USER);
+      await migrateFromLocalStorage(user.id);
+      const list = await fetchChoices(user.id);
       setPriorityList(list);
-      setAppState('ready');
+      setAppState('ready');           // triggers the Realtime subscription below
     } catch (err) {
       console.error('[App] Boot failed:', err);
       setLoadError(err.message);
       setAppState('error');
+    } finally {
+      bootingRef.current = false;
     }
   }
 
   // ── One-shot localStorage → Supabase migration ────────────────────────────
-  async function migrateFromLocalStorage() {
+  async function migrateFromLocalStorage(userId) {
     const raw = localStorage.getItem(LEGACY_CHOICES_KEY);
-    if (!raw) return; // nothing to migrate
+    if (!raw) return;
 
     let parsed;
-    try {
-      parsed = JSON.parse(raw);
-    } catch {
-      // Corrupt data — just clean up and move on
-      console.warn('[Migration] Could not parse localStorage choices — skipping upload.');
-    }
+    try { parsed = JSON.parse(raw); } catch { /* corrupt — skip upload */ }
 
     if (Array.isArray(parsed) && parsed.length > 0) {
-      await upsertChoices(USER, parsed); // may throw; let boot() catch it
-      console.info(`[Migration] ✓ Migrated ${parsed.length} choices from localStorage → Supabase`);
+      await upsertChoices(userId, parsed);
+      console.info(`[Migration] ✓ Migrated ${parsed.length} choices → Supabase`);
     }
 
     // Always wipe legacy keys so this never runs again
-    localStorage.removeItem(LEGACY_CHOICES_KEY);
-    localStorage.removeItem(LEGACY_VERSION_KEY);
-    localStorage.removeItem(LEGACY_USER_KEY);
+    [LEGACY_CHOICES_KEY, LEGACY_VERSION_KEY, LEGACY_USER_KEY].forEach(
+      (k) => localStorage.removeItem(k)
+    );
   }
 
-  // ── Realtime subscription — active while appState === 'ready' ─────────────
+  // ── Realtime subscription — active only while 'ready' ─────────────────────
   useEffect(() => {
-    if (appState !== 'ready') return;
+    if (appState !== 'ready' || !authUser) return;
 
-    const channel = subscribeToChoices(USER, (incomingList) => {
-      // Suppress self-echo: skip if the data matches what we already have in memory
+    const channel = subscribeToChoices(authUser.id, (incomingList) => {
+      // Suppress self-echo: skip if data matches what we already have
       if (JSON.stringify(incomingList) === JSON.stringify(priorityListRef.current)) return;
 
-      // Genuine remote change — apply immediately
-      console.info('[Realtime] Remote update received — applying to UI');
+      console.info('[Realtime] Remote update — applying to UI');
       setPriorityList(incomingList);
 
-      // Flash the sync toast for 2.5 s
       clearTimeout(toastTimerRef.current);
       setSyncToast(true);
       toastTimerRef.current = setTimeout(() => setSyncToast(false), 2500);
@@ -120,14 +158,16 @@ export default function App() {
       supabase.removeChannel(channel);
       clearTimeout(toastTimerRef.current);
     };
-  }, [appState]);
+  }, [appState, authUser]);
 
-  // ── Cloud sync — fire-and-forget ──────────────────────────────────────────
+  // ── Cloud sync ────────────────────────────────────────────────────────────
   const syncToCloud = useCallback(async (list) => {
+    const user = authUserRef.current;
+    if (!user) return;
     try {
-      await upsertChoices(USER, list);
+      await upsertChoices(user.id, list);
     } catch (err) {
-      console.warn('[App] Supabase sync failed (will retry on next change):', err.message);
+      console.warn('[App] Sync failed:', err.message);
     }
   }, []);
 
@@ -153,14 +193,20 @@ export default function App() {
   }, [syncToCloud]);
 
   const handleClear = useCallback(() => {
-    if (!window.confirm('Clear all choices from the priority list?')) return;
+    if (!window.confirm('Clear all choices?')) return;
     setPriorityList([]);
     syncToCloud([]);
   }, [syncToCloud]);
 
+  const handleLogout = useCallback(async () => {
+    try { await signOut(); } catch (err) { console.warn('[App] Sign-out error:', err.message); }
+    // onAuthStateChange SIGNED_OUT event resets state
+  }, []);
+
   // ── Render ────────────────────────────────────────────────────────────────
 
-  if (appState === 'loading') {
+  // Full-screen spinner for 'checking' and 'loading'
+  if (appState === 'checking' || appState === 'loading') {
     return (
       <div className="fixed inset-0 bg-slate-950 flex flex-col items-center justify-center gap-5">
         <div className="relative w-14 h-14">
@@ -168,28 +214,44 @@ export default function App() {
           <div className="absolute inset-0 rounded-full border-4 border-indigo-500 border-t-transparent animate-spin" />
         </div>
         <div className="text-center">
-          <p className="text-slate-200 font-semibold">Loading your choices…</p>
+          <p className="text-slate-200 font-semibold">
+            {appState === 'checking' ? 'Checking session…' : 'Loading your choices…'}
+          </p>
           <p className="text-slate-500 text-xs mt-1">Connecting to Supabase</p>
         </div>
       </div>
     );
   }
 
+  // Not authenticated — protect all routes
+  if (appState === 'unauthenticated') {
+    return <LoginScreen />;
+  }
+
+  // Boot failed
   if (appState === 'error') {
     return (
       <div className="fixed inset-0 bg-slate-950 flex flex-col items-center justify-center gap-4 text-center p-6">
         <div className="text-5xl">⚠️</div>
-        <h2 className="text-red-400 font-bold text-lg">Could not connect to Supabase</h2>
+        <h2 className="text-red-400 font-bold text-lg">Could not load your choices</h2>
         <p className="text-slate-500 text-sm max-w-sm">{loadError}</p>
         <p className="text-slate-600 text-xs max-w-sm">
-          Check that VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY are set correctly in .env
+          Check your .env credentials and that the Supabase table exists.
         </p>
-        <button
-          onClick={boot}
-          className="mt-2 px-5 py-2 rounded-xl bg-indigo-600 text-white text-sm font-semibold hover:bg-indigo-500 transition-colors"
-        >
-          Retry
-        </button>
+        <div className="flex gap-3 mt-2">
+          <button
+            onClick={handleLogout}
+            className="px-4 py-2 rounded-xl border border-slate-700 text-slate-300 text-sm hover:border-slate-500 transition-colors"
+          >
+            Sign Out
+          </button>
+          <button
+            onClick={() => boot(authUserRef.current)}
+            className="px-5 py-2 rounded-xl bg-indigo-600 text-white text-sm font-semibold hover:bg-indigo-500 transition-colors"
+          >
+            Retry
+          </button>
+        </div>
       </div>
     );
   }
@@ -199,6 +261,8 @@ export default function App() {
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col">
       <Navbar
         priorityCount={priorityList.length}
+        userEmail={authUser?.email ?? null}
+        onLogout={handleLogout}
       />
 
       <Routes>
