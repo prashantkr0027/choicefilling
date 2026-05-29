@@ -11,11 +11,11 @@ const QUOTA_COLORS = {
 };
 
 const SEAT_COLORS = {
-  OPEN:    'bg-slate-600/60 text-slate-300',
-  EWS:     'bg-yellow-500/20 text-yellow-300',
+  OPEN:      'bg-slate-600/60 text-slate-300',
+  EWS:       'bg-yellow-500/20 text-yellow-300',
   'OBC-NCL': 'bg-orange-500/20 text-orange-300',
-  SC:      'bg-pink-500/20 text-pink-300',
-  ST:      'bg-red-500/20 text-red-300',
+  SC:        'bg-pink-500/20 text-pink-300',
+  ST:        'bg-red-500/20 text-red-300',
 };
 
 const INSTITUTE_TYPE_COLORS = {
@@ -32,7 +32,6 @@ function getSeatColor(seatType) {
   return 'bg-slate-600/60 text-slate-300';
 }
 
-// Round label abbreviation: "Round 1" → "R1"
 function abbrevRound(round) {
   return round.replace(/round\s*/i, 'R');
 }
@@ -51,8 +50,6 @@ export default function CutoffCard({ item, onAdd, isAdded, activeRound }) {
 
   const quotaClass = QUOTA_COLORS[item.quota] ?? 'bg-slate-600/40 text-slate-400 border-slate-600/40';
   const rounds = sortedRoundEntries(item.rounds || {});
-
-  // Highlight the active round filter if set
   const highlightRound = activeRound && activeRound !== 'All' ? activeRound : null;
 
   return (
@@ -61,7 +58,8 @@ export default function CutoffCard({ item, onAdd, isAdded, activeRound }) {
       style={style}
       {...attributes}
       className={`
-        group relative rounded-xl border transition-all duration-200 cursor-grab active:cursor-grabbing
+        group relative rounded-xl border transition-all duration-200
+        cursor-grab active:cursor-grabbing touch-none
         ${isDragging
           ? 'border-indigo-400 shadow-xl shadow-indigo-500/30 bg-slate-750'
           : isAdded
@@ -71,10 +69,9 @@ export default function CutoffCard({ item, onAdd, isAdded, activeRound }) {
       `}
       {...listeners}
     >
-      <div className="p-3">
+      <div className="p-3 sm:p-4">
         {/* Badges row */}
         <div className="flex items-center gap-1.5 mb-2 flex-wrap">
-          {/* Institute type badge */}
           {item.instituteType && item.instituteType !== 'Unknown' && (
             <span className={`text-[9px] font-black px-1.5 py-0.5 rounded border tracking-wide ${
               INSTITUTE_TYPE_COLORS[item.instituteType] ?? 'bg-slate-700 text-slate-300 border-slate-600'
@@ -88,7 +85,7 @@ export default function CutoffCard({ item, onAdd, isAdded, activeRound }) {
           <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${getSeatColor(item.seatType)}`}>
             {item.seatType}
           </span>
-          <span className="text-[10px] text-slate-500 ml-auto truncate max-w-[110px]" title={item.gender}>
+          <span className="text-[10px] text-slate-500 ml-auto" title={item.gender}>
             {item.gender === 'Gender-Neutral' ? '⚥ Neutral' : '♀ Female'}
           </span>
           {isAdded && (
@@ -97,12 +94,12 @@ export default function CutoffCard({ item, onAdd, isAdded, activeRound }) {
         </div>
 
         {/* Institute */}
-        <p className="text-slate-200 font-semibold text-xs leading-relaxed mb-1">
+        <p className="text-slate-200 font-semibold text-xs sm:text-sm leading-relaxed mb-1">
           {item.institute}
         </p>
 
         {/* Program */}
-        <p className="text-indigo-300 text-[11px] leading-relaxed mb-2.5">
+        <p className="text-indigo-300 text-[11px] sm:text-xs leading-relaxed mb-2.5">
           {item.program}
         </p>
 
@@ -114,7 +111,7 @@ export default function CutoffCard({ item, onAdd, isAdded, activeRound }) {
               <div
                 key={round}
                 className={`
-                  flex items-center justify-between text-[10px] rounded-lg px-2 py-1
+                  flex items-center justify-between text-[10px] rounded-lg px-2 py-1.5
                   ${isHighlighted
                     ? 'bg-indigo-500/15 border border-indigo-500/25'
                     : 'bg-slate-900/60'
@@ -134,15 +131,16 @@ export default function CutoffCard({ item, onAdd, isAdded, activeRound }) {
           })}
         </div>
 
-        {/* Add button */}
+        {/* Add button — full height touch target */}
         <button
           onClick={(e) => { e.stopPropagation(); onAdd(item); }}
           disabled={isAdded}
           className={`
-            w-full py-1.5 rounded-lg text-xs font-semibold transition-all duration-200 flex items-center justify-center gap-1.5
+            w-full py-2.5 sm:py-2 rounded-lg text-xs font-semibold transition-all duration-200
+            flex items-center justify-center gap-1.5 min-h-[44px] sm:min-h-[36px]
             ${isAdded
               ? 'bg-emerald-500/10 text-emerald-400 cursor-default border border-emerald-500/20'
-              : 'bg-indigo-500/15 text-indigo-400 hover:bg-indigo-500 hover:text-white border border-indigo-500/30 hover:scale-[1.02]'
+              : 'bg-indigo-500/15 text-indigo-400 hover:bg-indigo-500 hover:text-white border border-indigo-500/30 active:scale-[0.98]'
             }
           `}
         >

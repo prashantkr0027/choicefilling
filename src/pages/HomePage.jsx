@@ -3,6 +3,7 @@ import {
   DndContext,
   DragOverlay,
   PointerSensor,
+  TouchSensor,
   useSensor,
   useSensors,
   rectIntersection,
@@ -21,11 +22,11 @@ const DEFAULT_FILTERS = {
   institute:     '',
   branch:        '',
   round:         'All',
-  category:      'All',   // base category: OPEN | EWS | OBC-NCL | SC | ST
-  pwd:           false,   // when true, look for "<category> (PwD)" seat types
-  quota:         'All',   // OS | HS | AI
-  gender:        'All',   // Gender-Neutral | Female-Only
-  instituteType: 'All',   // NIT | IIIT | IIT | GFTI
+  category:      'All',
+  pwd:           false,
+  quota:         'All',
+  gender:        'All',
+  instituteType: 'All',
 };
 
 const PAGE_SIZE = 60;
@@ -37,8 +38,9 @@ export default function HomePage({ priorityList, onAdd, onRemove, onClear, onReo
   const [page,           setPage]           = useState(1);
   const [isLoading,      setIsLoading]      = useState(true);
   const [loadError,      setLoadError]      = useState(null);
+  // Mobile collapsible filter panel — collapsed by default on small screens
+  const [filtersOpen, setFiltersOpen] = useState(false);
 
-  // Load all bundled HTML files on mount
   useEffect(() => {
     setIsLoading(true);
     loadAllBundledFiles()
@@ -50,49 +52,35 @@ export default function HomePage({ priorityList, onAdd, onRemove, onClear, onReo
       .finally(() => setIsLoading(false));
   }, []);
 
-  // Reset to page 1 whenever filters or data change
   useEffect(() => { setPage(1); }, [filters, allRows]);
 
   const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 5 } })
+    // Mouse / stylus
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    // Touch — delay distinguishes scroll from drag
+    useSensor(TouchSensor, { activationConstraint: { delay: 200, tolerance: 8 } }),
   );
 
   const handleFilterChange = useCallback((key, value) => {
     setFilters((prev) => ({ ...prev, [key]: value }));
   }, []);
 
-  // Group flat rows → unique (instituteType, institute, program, quota, seatType, gender) combos
   const groupedItems = useMemo(() => groupRows(allRows), [allRows]);
 
-  // Apply all active filters
   const filteredItems = useMemo(() => {
     return groupedItems.filter((item) => {
-      // ── Institute Type ──
       if (filters.instituteType !== 'All' && item.instituteType !== filters.instituteType) return false;
-
-      // ── Text search ──
       if (filters.institute && !item.institute.toLowerCase().includes(filters.institute.toLowerCase())) return false;
       if (filters.branch    && !item.program.toLowerCase().includes(filters.branch.toLowerCase()))    return false;
-
-      // ── Round ── (item must have data for that round)
       if (filters.round !== 'All' && !item.rounds[filters.round]) return false;
-
-      // ── Category / Seat Type + PwD ──
       if (filters.category !== 'All') {
-        // PwD enabled → match "<category> (PwD)", else match "<category>" exactly
         const target = filters.pwd ? `${filters.category} (PwD)` : filters.category;
         if (item.seatType !== target) return false;
       } else if (filters.pwd) {
-        // No specific category but PwD on → show only PwD seat types
         if (!item.seatType.includes('(PwD)')) return false;
       }
-
-      // ── Quota ──
-      if (filters.quota !== 'All' && item.quota !== filters.quota) return false;
-
-      // ── Gender ──
-      if (filters.gender !== 'All' && item.gender !== filters.gender) return false;
-
+      if (filters.quota  !== 'All' && item.quota  !== filters.quota)  return false;
+      if (filters.gender !== 'All' && item.gender !== filters.gender)  return false;
       return true;
     });
   }, [groupedItems, filters]);
@@ -107,7 +95,6 @@ export default function HomePage({ priorityList, onAdd, onRemove, onClear, onReo
     [priorityList]
   );
 
-  // Count active (non-default) filters for the badge
   const activeFilterCount = useMemo(() => {
     let count = 0;
     if (filters.instituteType !== 'All') count++;
@@ -120,8 +107,6 @@ export default function HomePage({ priorityList, onAdd, onRemove, onClear, onReo
     if (filters.branch.trim())           count++;
     return count;
   }, [filters]);
-
-  // ── DnD handlers ─────────────────────────────────────────────────────────────
 
   const handleDragStart = useCallback(({ active }) => {
     const item = active.data.current?.item;
@@ -138,7 +123,6 @@ export default function HomePage({ priorityList, onAdd, onRemove, onClear, onReo
       return;
     }
 
-    // Reorder within priority list
     if (active.id !== over.id) {
       const oldIndex = priorityList.findIndex((i) => i.id === active.id);
       const newIndex = priorityList.findIndex((i) => i.id === over.id);
@@ -150,7 +134,10 @@ export default function HomePage({ priorityList, onAdd, onRemove, onClear, onReo
 
   const hasMore = paginatedItems.length < filteredItems.length;
 
-  // ── Render ────────────────────────────────────────────────────────────────────
+  const resetFilters = useCallback(() => {
+    setFilters(DEFAULT_FILTERS);
+    setFiltersOpen(false);
+  }, []);
 
   return (
     <DndContext
@@ -159,15 +146,37 @@ export default function HomePage({ priorityList, onAdd, onRemove, onClear, onReo
       onDragStart={handleDragStart}
       onDragEnd={handleDragEnd}
     >
-      <main className="flex-1 max-w-screen-2xl mx-auto w-full px-4 py-4 flex flex-col lg:flex-row gap-4">
+      <main className="flex-1 max-w-screen-2xl mx-auto w-full px-3 sm:px-4 py-3 sm:py-4 flex flex-col lg:flex-row gap-3 sm:gap-4">
 
         {/* ═══ LEFT PANEL ═══ */}
-        <div className="flex-1 min-w-0 flex flex-col gap-4">
+        <div className="flex-1 min-w-0 flex flex-col gap-3 sm:gap-4">
 
-          {/* Filters panel */}
+          {/* ── Filters ── */}
           {!isLoading && !loadError && groupedItems.length > 0 && (
-            <div className="rounded-2xl border border-slate-800 bg-slate-900/60 p-4">
-              <div className="flex items-center gap-2 mb-3.5">
+            <div className="rounded-2xl border border-slate-800 bg-slate-900/60">
+              {/* Mobile toggle header — always visible on mobile, hidden on lg+ */}
+              <button
+                onClick={() => setFiltersOpen((o) => !o)}
+                className="lg:hidden w-full flex items-center gap-2 px-4 py-3 text-left"
+                aria-expanded={filtersOpen}
+              >
+                <span className="text-base">🔍</span>
+                <span className="text-slate-200 font-bold text-sm">Filters</span>
+                {activeFilterCount > 0 && (
+                  <span className="px-1.5 py-0.5 rounded-full bg-indigo-600 text-white text-[9px] font-bold leading-none">
+                    {activeFilterCount}
+                  </span>
+                )}
+                <span className="text-xs text-slate-500 ml-1">
+                  {filteredItems.length.toLocaleString()} results
+                </span>
+                <span className={`ml-auto text-slate-500 text-xs transition-transform duration-200 ${filtersOpen ? 'rotate-180' : ''}`}>
+                  ▼
+                </span>
+              </button>
+
+              {/* Desktop header — always visible on lg+ */}
+              <div className="hidden lg:flex items-center gap-2 px-4 pt-4 pb-0 mb-3.5">
                 <span className="text-base">🔍</span>
                 <h2 className="text-slate-200 font-bold text-sm">Filters</h2>
                 {activeFilterCount > 0 && (
@@ -180,29 +189,40 @@ export default function HomePage({ priorityList, onAdd, onRemove, onClear, onReo
                   <span className="text-slate-700"> / {groupedItems.length.toLocaleString()} combos</span>
                 </span>
                 {activeFilterCount > 0 && (
-                  <button
-                    onClick={() => setFilters(DEFAULT_FILTERS)}
-                    className="text-[10px] text-indigo-400 hover:text-indigo-300 transition-colors"
-                  >
+                  <button onClick={resetFilters} className="text-[10px] text-indigo-400 hover:text-indigo-300 transition-colors">
                     Reset all
                   </button>
                 )}
               </div>
-              {/* Pass groupedItems for round detection */}
-              <FilterBar
-                groupedItems={groupedItems}
-                filters={filters}
-                onFilterChange={handleFilterChange}
-              />
+
+              {/* Filter body — collapsible on mobile, always shown on lg+ */}
+              <div className={`px-4 pb-4 ${filtersOpen ? 'block' : 'hidden'} lg:block`}>
+                {/* Reset button visible inside panel on mobile */}
+                {activeFilterCount > 0 && (
+                  <div className="lg:hidden flex justify-between items-center mb-3">
+                    <span className="text-xs text-slate-500">
+                      {filteredItems.length.toLocaleString()} / {groupedItems.length.toLocaleString()} combos
+                    </span>
+                    <button onClick={resetFilters} className="text-[10px] text-indigo-400 hover:text-indigo-300 transition-colors">
+                      Reset all
+                    </button>
+                  </div>
+                )}
+                <FilterBar
+                  groupedItems={groupedItems}
+                  filters={filters}
+                  onFilterChange={handleFilterChange}
+                />
+              </div>
             </div>
           )}
 
-          {/* ── Cards area ── */}
+          {/* ── Cards ── */}
           {isLoading ? (
-            <div className="flex-1 flex flex-col items-center justify-center gap-4 py-20">
-              <div className="relative w-16 h-16">
-                <div className="w-16 h-16 rounded-full border-4 border-slate-700" />
-                <div className="w-16 h-16 rounded-full border-4 border-indigo-500 border-t-transparent animate-spin absolute inset-0" />
+            <div className="flex-1 flex flex-col items-center justify-center gap-4 py-16 sm:py-20">
+              <div className="relative w-14 h-14 sm:w-16 sm:h-16">
+                <div className="w-full h-full rounded-full border-4 border-slate-700" />
+                <div className="w-full h-full rounded-full border-4 border-indigo-500 border-t-transparent animate-spin absolute inset-0" />
               </div>
               <div className="text-center">
                 <p className="text-slate-200 font-semibold">Loading cutoff data…</p>
@@ -213,7 +233,7 @@ export default function HomePage({ priorityList, onAdd, onRemove, onClear, onReo
             </div>
 
           ) : loadError ? (
-            <div className="flex-1 flex flex-col items-center justify-center gap-3 py-20 text-center">
+            <div className="flex-1 flex flex-col items-center justify-center gap-3 py-16 text-center px-4">
               <div className="text-4xl">⚠️</div>
               <p className="text-red-400 font-semibold">Failed to load data files</p>
               <p className="text-slate-500 text-xs max-w-xs">{loadError}</p>
@@ -226,13 +246,10 @@ export default function HomePage({ priorityList, onAdd, onRemove, onClear, onReo
             </div>
 
           ) : filteredItems.length === 0 ? (
-            <div className="text-center py-12 text-slate-500">
+            <div className="text-center py-12 text-slate-500 px-4">
               <div className="text-3xl mb-2">🔎</div>
               <p className="font-medium">No results match your filters</p>
-              <button
-                onClick={() => setFilters(DEFAULT_FILTERS)}
-                className="mt-2 text-xs text-indigo-400 hover:text-indigo-300"
-              >
+              <button onClick={resetFilters} className="mt-2 text-xs text-indigo-400 hover:text-indigo-300">
                 Clear all filters
               </button>
             </div>
@@ -241,7 +258,7 @@ export default function HomePage({ priorityList, onAdd, onRemove, onClear, onReo
             <>
               <div
                 className="grid gap-3"
-                style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(360px, 1fr))' }}
+                style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(min(360px, 100%), 1fr))' }}
               >
                 {paginatedItems.map((item) => (
                   <CutoffCard
@@ -258,7 +275,7 @@ export default function HomePage({ priorityList, onAdd, onRemove, onClear, onReo
                 <div className="text-center pt-2">
                   <button
                     onClick={() => setPage((p) => p + 1)}
-                    className="px-6 py-2.5 rounded-xl border border-slate-700 text-slate-300 text-sm hover:border-indigo-500 hover:text-indigo-300 transition-all duration-200"
+                    className="px-5 sm:px-6 py-2.5 rounded-xl border border-slate-700 text-slate-300 text-sm hover:border-indigo-500 hover:text-indigo-300 transition-all duration-200 min-h-[44px]"
                   >
                     Load more ({filteredItems.length - paginatedItems.length} remaining)
                   </button>
@@ -271,8 +288,8 @@ export default function HomePage({ priorityList, onAdd, onRemove, onClear, onReo
         {/* ═══ RIGHT PANEL ═══ */}
         <div className="w-full lg:w-[360px] xl:w-[400px] flex-shrink-0 flex flex-col gap-3">
           <div
-            className="sticky rounded-2xl border border-slate-800 bg-slate-900/70 p-4 flex flex-col gap-3"
-            style={{ top: '4.5rem', maxHeight: 'calc(100vh - 5rem)' }}
+            className="rounded-2xl border border-slate-800 bg-slate-900/70 p-3 sm:p-4 flex flex-col gap-3 lg:sticky"
+            style={{ top: '3.5rem', maxHeight: 'calc(100vh - 4.5rem)' }}
           >
             <PriorityList
               items={priorityList}
@@ -287,7 +304,7 @@ export default function HomePage({ priorityList, onAdd, onRemove, onClear, onReo
       {/* Drag Overlay */}
       <DragOverlay>
         {activeDragItem ? (
-          <div className="rounded-xl border-2 border-indigo-400 bg-slate-800 shadow-2xl shadow-indigo-500/30 p-3 opacity-90 rotate-1 scale-105 max-w-xs">
+          <div className="rounded-xl border-2 border-indigo-400 bg-slate-800 shadow-2xl shadow-indigo-500/30 p-3 opacity-90 rotate-1 scale-105 max-w-[300px]">
             <p className="text-slate-200 font-semibold text-xs">{activeDragItem.institute}</p>
             <p className="text-indigo-300 text-[11px] mt-0.5">{activeDragItem.program}</p>
             <p className="text-slate-500 text-[10px] mt-1">

@@ -2,6 +2,7 @@ import React, { useMemo } from 'react';
 import {
   DndContext,
   PointerSensor,
+  TouchSensor,
   useSensor,
   useSensors,
   closestCenter,
@@ -13,7 +14,7 @@ import {
   useSortable,
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { deriveAllRounds, sortedRoundEntries } from '../utils/groupRows';
+import { deriveAllRounds } from '../utils/groupRows';
 import ExportButton from '../components/ExportButton';
 
 // ── Sortable table row ────────────────────────────────────────────────────────
@@ -37,20 +38,18 @@ function SortableRow({ item, index, allRounds, onRemove }) {
       className={`
         border-b border-slate-800/60 transition-colors
         print:border-gray-200
-        ${isDragging
-          ? 'opacity-60 bg-violet-950/40'
-          : 'hover:bg-slate-800/30'
-        }
+        ${isDragging ? 'opacity-60 bg-violet-950/40' : 'hover:bg-slate-800/30'}
       `}
     >
       {/* # + drag handle */}
-      <td className="px-3 py-2.5 whitespace-nowrap print:hidden">
-        <div className="flex items-center gap-2">
+      <td className="px-2 sm:px-3 py-2.5 whitespace-nowrap print:hidden">
+        <div className="flex items-center gap-1.5 sm:gap-2">
           <button
             {...attributes}
             {...listeners}
-            className="flex flex-col gap-0.5 cursor-grab active:cursor-grabbing opacity-40 hover:opacity-80 transition-opacity p-0.5"
+            className="flex flex-col gap-0.5 cursor-grab active:cursor-grabbing opacity-40 hover:opacity-80 transition-opacity p-1.5 -m-1 touch-none"
             title="Drag to reorder"
+            style={{ minWidth: 32, minHeight: 32 }}
           >
             {[0, 1, 2].map((i) => (
               <div key={i} className="w-3 h-0.5 bg-slate-400 rounded-full" />
@@ -61,36 +60,31 @@ function SortableRow({ item, index, allRounds, onRemove }) {
           </span>
         </div>
       </td>
-      {/* # for print */}
+      {/* Print-only # */}
       <td className="hidden print:table-cell px-2 py-1.5 text-sm font-bold text-gray-800 whitespace-nowrap">
         {index + 1}
       </td>
 
-      {/* Institute */}
-      <td className="px-3 py-2.5 text-xs text-slate-200 font-semibold print:text-gray-900 print:text-sm">
+      <td className="px-2 sm:px-3 py-2.5 text-xs text-slate-200 font-semibold print:text-gray-900 print:text-sm min-w-[140px]">
         {item.institute}
       </td>
 
-      {/* Branch */}
-      <td className="px-3 py-2.5 text-xs text-indigo-300 print:text-gray-700 print:text-sm">
+      <td className="px-2 sm:px-3 py-2.5 text-xs text-indigo-300 print:text-gray-700 print:text-sm min-w-[140px]">
         {item.program}
       </td>
 
-      {/* Quota */}
-      <td className="px-3 py-2.5 text-xs text-slate-400 whitespace-nowrap print:text-gray-700">
+      <td className="px-2 sm:px-3 py-2.5 text-xs text-slate-400 whitespace-nowrap print:text-gray-700">
         {item.quota}
       </td>
 
-      {/* Seat Type */}
-      <td className="px-3 py-2.5 text-xs text-slate-400 whitespace-nowrap print:text-gray-700">
+      <td className="px-2 sm:px-3 py-2.5 text-xs text-slate-400 whitespace-nowrap print:text-gray-700">
         {item.seatType}
       </td>
 
-      {/* Per-round CR */}
       {allRounds.map((round) => {
         const data = item.rounds?.[round];
         return (
-          <td key={round} className="px-3 py-2.5 text-center whitespace-nowrap print:text-gray-800">
+          <td key={round} className="px-2 sm:px-3 py-2.5 text-center whitespace-nowrap print:text-gray-800">
             {data ? (
               <div className="flex flex-col items-center gap-0.5">
                 <span className="text-[10px] font-mono font-bold text-emerald-400 print:text-green-700">
@@ -107,11 +101,10 @@ function SortableRow({ item, index, allRounds, onRemove }) {
         );
       })}
 
-      {/* Remove */}
-      <td className="px-3 py-2.5 print:hidden">
+      <td className="px-2 sm:px-3 py-2.5 print:hidden">
         <button
           onClick={() => onRemove(item.id)}
-          className="w-6 h-6 rounded flex items-center justify-center text-slate-600 hover:text-red-400 hover:bg-red-500/10 transition-colors text-xs"
+          className="w-8 h-8 rounded-lg flex items-center justify-center text-slate-600 hover:text-red-400 hover:bg-red-500/10 transition-colors text-sm"
           title="Remove"
         >
           ✕
@@ -125,7 +118,8 @@ function SortableRow({ item, index, allRounds, onRemove }) {
 
 export default function ChoicesPage({ priorityList, onReorder, onRemove, onClear }) {
   const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 5 } })
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(TouchSensor,   { activationConstraint: { delay: 200, tolerance: 8 } }),
   );
 
   const allRounds = useMemo(() => deriveAllRounds(priorityList), [priorityList]);
@@ -140,21 +134,24 @@ export default function ChoicesPage({ priorityList, onReorder, onRemove, onClear
   };
 
   return (
-    <div className="max-w-screen-2xl mx-auto px-4 py-6">
+    <div className="max-w-screen-2xl mx-auto px-3 sm:px-4 py-4 sm:py-6">
+
       {/* Screen header */}
-      <div className="flex items-center justify-between mb-6 print:hidden">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4 sm:mb-6 print:hidden">
         <div>
-          <h1 className="text-xl font-bold text-slate-100">My Choice List</h1>
-          <p className="text-slate-500 text-sm mt-0.5">
+          <h1 className="text-lg sm:text-xl font-bold text-slate-100">My Choice List</h1>
+          <p className="text-slate-500 text-xs sm:text-sm mt-0.5">
             {priorityList.length} choice{priorityList.length !== 1 ? 's' : ''}
-            {priorityList.length > 0 && ' · drag rows to reorder · CR = Closing Rank, OR = Opening Rank'}
+            {priorityList.length > 0 && (
+              <span className="hidden sm:inline"> · drag rows to reorder · CR = Closing Rank, OR = Opening Rank</span>
+            )}
           </p>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
           {priorityList.length > 0 && (
             <button
               onClick={onClear}
-              className="text-sm text-red-400/70 hover:text-red-400 px-3 py-2 rounded-lg hover:bg-red-500/10 transition-colors"
+              className="text-sm text-red-400/70 hover:text-red-400 px-3 py-2 rounded-lg hover:bg-red-500/10 transition-colors min-h-[40px]"
             >
               Clear All
             </button>
@@ -162,11 +159,11 @@ export default function ChoicesPage({ priorityList, onReorder, onRemove, onClear
           <button
             onClick={() => window.print()}
             disabled={priorityList.length === 0}
-            className="flex items-center gap-2 px-4 py-2 rounded-xl bg-slate-700 hover:bg-slate-600 text-slate-200 text-sm font-semibold transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+            className="flex items-center gap-2 px-3 sm:px-4 py-2 rounded-xl bg-slate-700 hover:bg-slate-600 text-slate-200 text-sm font-semibold transition-colors disabled:opacity-40 disabled:cursor-not-allowed min-h-[40px]"
           >
-            🖨 Print
+            🖨 <span className="hidden sm:inline">Print</span>
           </button>
-          <div className="w-48">
+          <div className="w-full sm:w-48">
             <ExportButton items={priorityList} />
           </div>
         </div>
@@ -183,7 +180,7 @@ export default function ChoicesPage({ priorityList, onReorder, onRemove, onClear
       </div>
 
       {priorityList.length === 0 ? (
-        <div className="text-center py-24 text-slate-500">
+        <div className="text-center py-20 sm:py-24 text-slate-500">
           <div className="text-5xl mb-4">🎯</div>
           <p className="font-semibold text-slate-300 text-lg">No choices yet</p>
           <p className="text-sm mt-1">
@@ -198,40 +195,42 @@ export default function ChoicesPage({ priorityList, onReorder, onRemove, onClear
           collisionDetection={closestCenter}
           onDragEnd={handleDragEnd}
         >
+          {/* Scroll hint on mobile */}
+          <p className="sm:hidden text-[10px] text-slate-600 mb-2 text-right">
+            ← scroll table horizontally →
+          </p>
           <div className="overflow-x-auto rounded-2xl border border-slate-800 bg-slate-900/60 print:border-0 print:bg-white print:rounded-none">
-            <table className="w-full text-left border-collapse">
+            <table className="w-full text-left border-collapse" style={{ minWidth: 520 }}>
               <thead>
                 <tr className="border-b border-slate-700 print:border-gray-400">
-                  {/* Screen # col */}
-                  <th className="px-3 py-3 text-[10px] font-semibold text-slate-400 uppercase tracking-wider whitespace-nowrap print:hidden">
+                  <th className="px-2 sm:px-3 py-3 text-[10px] font-semibold text-slate-400 uppercase tracking-wider whitespace-nowrap print:hidden">
                     #
                   </th>
-                  {/* Print # col */}
                   <th className="hidden print:table-cell px-2 py-2 text-xs font-bold text-gray-700 uppercase">#</th>
 
-                  <th className="px-3 py-3 text-[10px] font-semibold text-slate-400 uppercase tracking-wider print:text-gray-700 print:text-xs">
+                  <th className="px-2 sm:px-3 py-3 text-[10px] font-semibold text-slate-400 uppercase tracking-wider print:text-gray-700 print:text-xs">
                     Institute
                   </th>
-                  <th className="px-3 py-3 text-[10px] font-semibold text-slate-400 uppercase tracking-wider print:text-gray-700 print:text-xs">
+                  <th className="px-2 sm:px-3 py-3 text-[10px] font-semibold text-slate-400 uppercase tracking-wider print:text-gray-700 print:text-xs">
                     Branch / Program
                   </th>
-                  <th className="px-3 py-3 text-[10px] font-semibold text-slate-400 uppercase tracking-wider print:text-gray-700 print:text-xs">
+                  <th className="px-2 sm:px-3 py-3 text-[10px] font-semibold text-slate-400 uppercase tracking-wider print:text-gray-700 print:text-xs">
                     Quota
                   </th>
-                  <th className="px-3 py-3 text-[10px] font-semibold text-slate-400 uppercase tracking-wider whitespace-nowrap print:text-gray-700 print:text-xs">
+                  <th className="px-2 sm:px-3 py-3 text-[10px] font-semibold text-slate-400 uppercase tracking-wider whitespace-nowrap print:text-gray-700 print:text-xs">
                     Seat Type
                   </th>
                   {allRounds.map((round) => (
                     <th
                       key={round}
-                      className="px-3 py-3 text-[10px] font-semibold text-slate-400 uppercase tracking-wider text-center whitespace-nowrap print:text-gray-700 print:text-xs"
+                      className="px-2 sm:px-3 py-3 text-[10px] font-semibold text-slate-400 uppercase tracking-wider text-center whitespace-nowrap print:text-gray-700 print:text-xs"
                     >
                       {round.replace(/round\s*/i, 'R')}
                       <br />
                       <span className="normal-case font-normal text-[9px] text-slate-500 print:text-gray-400">CR / OR</span>
                     </th>
                   ))}
-                  <th className="px-3 py-3 print:hidden" />
+                  <th className="px-2 sm:px-3 py-3 print:hidden" />
                 </tr>
               </thead>
               <tbody>

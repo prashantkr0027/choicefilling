@@ -30,7 +30,7 @@ export default function PriorityItem({ item, index, onRemove }) {
       ref={setNodeRef}
       style={style}
       className={`
-        flex items-start gap-2.5 rounded-xl border px-3 py-2.5 transition-all duration-200
+        flex items-start gap-2 rounded-xl border px-2.5 sm:px-3 py-2.5 transition-all duration-200
         ${isDragging
           ? 'border-violet-400 bg-violet-950/40 shadow-xl shadow-violet-500/30 opacity-80'
           : 'border-slate-700/60 bg-slate-800/50 hover:border-slate-600 hover:bg-slate-800/80'
@@ -42,12 +42,13 @@ export default function PriorityItem({ item, index, onRemove }) {
         <span className="text-xs font-bold text-white">{index + 1}</span>
       </div>
 
-      {/* Drag Handle */}
+      {/* Drag Handle — enlarged touch target */}
       <div
         {...attributes}
         {...listeners}
-        className="flex-shrink-0 flex flex-col gap-0.5 mt-2.5 cursor-grab active:cursor-grabbing opacity-35 hover:opacity-70 transition-opacity"
+        className="flex-shrink-0 flex flex-col items-center justify-center gap-1 cursor-grab active:cursor-grabbing opacity-35 hover:opacity-70 active:opacity-90 transition-opacity touch-none"
         title="Drag to reorder"
+        style={{ width: 32, height: 44, marginTop: -4 }}
       >
         {[0, 1, 2].map((i) => (
           <div key={i} className="w-3.5 h-0.5 bg-slate-400 rounded-full" />
@@ -56,7 +57,7 @@ export default function PriorityItem({ item, index, onRemove }) {
 
       {/* Content */}
       <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-1.5 mb-0.5">
+        <div className="flex items-center gap-1.5 mb-0.5 flex-wrap">
           <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-slate-700 text-slate-400">
             {item.quota}
           </span>
@@ -72,7 +73,6 @@ export default function PriorityItem({ item, index, onRemove }) {
           {item.program}
         </p>
 
-        {/* Rounds inline */}
         <div className="flex flex-wrap gap-x-3 gap-y-0.5">
           {rounds.map(([round, data]) => (
             <span key={round} className="text-[9px] font-mono text-slate-500 whitespace-nowrap">
@@ -84,11 +84,12 @@ export default function PriorityItem({ item, index, onRemove }) {
         </div>
       </div>
 
-      {/* Remove */}
+      {/* Remove — 44px touch target */}
       <button
         onClick={() => onRemove(item.id)}
-        className="flex-shrink-0 w-6 h-6 rounded-lg flex items-center justify-center text-slate-500 hover:text-red-400 hover:bg-red-500/10 transition-all duration-200 mt-0.5"
+        className="flex-shrink-0 flex items-center justify-center text-slate-500 hover:text-red-400 active:text-red-400 hover:bg-red-500/10 active:bg-red-500/10 rounded-lg transition-all duration-200"
         title="Remove"
+        style={{ width: 36, height: 44, marginTop: -4 }}
       >
         ✕
       </button>

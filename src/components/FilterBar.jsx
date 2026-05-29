@@ -38,15 +38,15 @@ function PillGroup({ options, value, onChange, accent = 'indigo' }) {
   }[accent] ?? 'bg-indigo-600 text-white border-indigo-600';
 
   return (
-    <div className="flex flex-wrap gap-1">
+    <div className="flex flex-wrap gap-1.5">
       {/* All / reset button */}
       <button
         onClick={() => onChange('All')}
         className={`
-          px-2.5 py-1 rounded-lg text-[11px] font-semibold border transition-all duration-150
+          px-3 py-1.5 rounded-lg text-[11px] font-semibold border transition-all duration-150 min-h-[36px]
           ${value === 'All'
             ? activeClass
-            : 'bg-slate-800/80 border-slate-700 text-slate-400 hover:text-slate-200 hover:border-slate-600'
+            : 'bg-slate-800/80 border-slate-700 text-slate-400 hover:text-slate-200 hover:border-slate-600 active:bg-slate-700'
           }
         `}
       >
@@ -63,10 +63,10 @@ function PillGroup({ options, value, onChange, accent = 'indigo' }) {
             title={title}
             onClick={() => onChange(isActive ? 'All' : val)}
             className={`
-              px-2.5 py-1 rounded-lg text-[11px] font-semibold border transition-all duration-150
+              px-3 py-1.5 rounded-lg text-[11px] font-semibold border transition-all duration-150 min-h-[36px]
               ${isActive
                 ? activeClass
-                : 'bg-slate-800/80 border-slate-700 text-slate-400 hover:text-slate-200 hover:border-slate-600'
+                : 'bg-slate-800/80 border-slate-700 text-slate-400 hover:text-slate-200 hover:border-slate-600 active:bg-slate-700'
               }
             `}
           >
