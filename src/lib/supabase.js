@@ -52,7 +52,9 @@ export const supabase = createClient(supabaseUrl ?? '', supabaseKey ?? '');
 export async function signInWithGoogle() {
   const { error } = await supabase.auth.signInWithOAuth({
     provider: 'google',
-    options: { redirectTo: window.location.origin },
+    options: {
+      redirectTo: import.meta.env.VITE_SITE_URL || window.location.origin,
+    },
   });
   if (error) throw error;
 }
