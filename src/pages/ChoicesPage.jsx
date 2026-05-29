@@ -16,18 +16,13 @@ import {
 import { CSS } from '@dnd-kit/utilities';
 import { deriveAllRounds } from '../utils/groupRows';
 import ExportButton from '../components/ExportButton';
+import { useIsMobile } from '../hooks/useIsMobile';
 
-// ── Sortable table row ────────────────────────────────────────────────────────
+// ── Desktop sortable row (uses useSortable — must be inside DndContext) ───────
 
 function SortableRow({ item, index, allRounds, onRemove }) {
-  const {
-    attributes,
-    listeners,
-    setNodeRef,
-    transform,
-    transition,
-    isDragging,
-  } = useSortable({ id: item.id });
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
+    useSortable({ id: item.id });
 
   const style = { transform: CSS.Transform.toString(transform), transition };
 
@@ -35,13 +30,10 @@ function SortableRow({ item, index, allRounds, onRemove }) {
     <tr
       ref={setNodeRef}
       style={style}
-      className={`
-        border-b border-slate-800/60 transition-colors
-        print:border-gray-200
-        ${isDragging ? 'opacity-60 bg-violet-950/40' : 'hover:bg-slate-800/30'}
-      `}
+      className={`border-b border-slate-800/60 transition-colors print:border-gray-200 ${
+        isDragging ? 'opacity-60 bg-violet-950/40' : 'hover:bg-slate-800/30'
+      }`}
     >
-      {/* # + drag handle */}
       <td className="px-2 sm:px-3 py-2.5 whitespace-nowrap print:hidden">
         <div className="flex items-center gap-1.5 sm:gap-2">
           <button
@@ -60,27 +52,72 @@ function SortableRow({ item, index, allRounds, onRemove }) {
           </span>
         </div>
       </td>
-      {/* Print-only # */}
       <td className="hidden print:table-cell px-2 py-1.5 text-sm font-bold text-gray-800 whitespace-nowrap">
         {index + 1}
       </td>
+      <RowCells item={item} allRounds={allRounds} onRemove={onRemove} isMobile={false} />
+    </tr>
+  );
+}
 
-      <td className="px-2 sm:px-3 py-2.5 text-xs text-slate-200 font-semibold print:text-gray-900 print:text-sm min-w-[140px]">
+// ── Mobile row (plain tr — no DnD hooks) ─────────────────────────────────────
+
+function MobileRow({ item, index, total, allRounds, onRemove, onMoveUp, onMoveDown }) {
+  const isFirst = index === 0;
+  const isLast  = index === total - 1;
+
+  const arrowBtn = (label, handler, disabled, title) => (
+    <button
+      onClick={handler}
+      disabled={disabled}
+      title={title}
+      className={`flex items-center justify-center rounded transition-all ${
+        disabled
+          ? 'text-slate-700 cursor-default'
+          : 'text-slate-400 hover:text-indigo-300 active:text-indigo-200 hover:bg-indigo-500/10 active:bg-indigo-500/20'
+      }`}
+      style={{ width: 28, height: 28 }}
+    >
+      {label}
+    </button>
+  );
+
+  return (
+    <tr className="border-b border-slate-800/60 hover:bg-slate-800/20">
+      <td className="px-2 py-2 whitespace-nowrap print:hidden">
+        <div className="flex flex-col items-center gap-0.5">
+          {arrowBtn('▲', onMoveUp,   isFirst, 'Move up')}
+          <span className="w-6 h-6 rounded-md bg-gradient-to-br from-indigo-600 to-violet-600 flex items-center justify-center text-[10px] font-bold text-white">
+            {index + 1}
+          </span>
+          {arrowBtn('▼', onMoveDown, isLast,  'Move down')}
+        </div>
+      </td>
+      <td className="hidden print:table-cell px-2 py-1.5 text-sm font-bold text-gray-800 whitespace-nowrap">
+        {index + 1}
+      </td>
+      <RowCells item={item} allRounds={allRounds} onRemove={onRemove} isMobile={true} />
+    </tr>
+  );
+}
+
+// ── Shared row cells (institute, branch, quota, seat type, ranks, remove) ─────
+
+function RowCells({ item, allRounds, onRemove, isMobile }) {
+  return (
+    <>
+      <td className="px-2 sm:px-3 py-2.5 text-xs text-slate-200 font-semibold print:text-gray-900 print:text-sm min-w-[130px]">
         {item.institute}
       </td>
-
-      <td className="px-2 sm:px-3 py-2.5 text-xs text-indigo-300 print:text-gray-700 print:text-sm min-w-[140px]">
+      <td className="px-2 sm:px-3 py-2.5 text-xs text-indigo-300 print:text-gray-700 print:text-sm min-w-[130px]">
         {item.program}
       </td>
-
       <td className="px-2 sm:px-3 py-2.5 text-xs text-slate-400 whitespace-nowrap print:text-gray-700">
         {item.quota}
       </td>
-
       <td className="px-2 sm:px-3 py-2.5 text-xs text-slate-400 whitespace-nowrap print:text-gray-700">
         {item.seatType}
       </td>
-
       {allRounds.map((round) => {
         const data = item.rounds?.[round];
         return (
@@ -100,23 +137,26 @@ function SortableRow({ item, index, allRounds, onRemove }) {
           </td>
         );
       })}
-
       <td className="px-2 sm:px-3 py-2.5 print:hidden">
         <button
           onClick={() => onRemove(item.id)}
-          className="w-8 h-8 rounded-lg flex items-center justify-center text-slate-600 hover:text-red-400 hover:bg-red-500/10 transition-colors text-sm"
+          className="flex items-center justify-center rounded-lg text-slate-600 hover:text-red-400 active:text-red-400 hover:bg-red-500/10 transition-colors text-sm"
           title="Remove"
+          style={{ width: isMobile ? 36 : 28, height: isMobile ? 36 : 28 }}
         >
           ✕
         </button>
       </td>
-    </tr>
+    </>
   );
 }
 
 // ── Page ─────────────────────────────────────────────────────────────────────
 
 export default function ChoicesPage({ priorityList, onReorder, onRemove, onClear }) {
+  const isMobile = useIsMobile();
+
+  // Sensors always defined (hook rules)
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
     useSensor(TouchSensor,   { activationConstraint: { delay: 200, tolerance: 8 } }),
@@ -133,6 +173,75 @@ export default function ChoicesPage({ priorityList, onReorder, onRemove, onClear
     }
   };
 
+  const moveUp   = (index) => { if (index > 0) onReorder(arrayMove(priorityList, index, index - 1)); };
+  const moveDown = (index) => { if (index < priorityList.length - 1) onReorder(arrayMove(priorityList, index, index + 1)); };
+
+  const tableHeader = (
+    <thead>
+      <tr className="border-b border-slate-700 print:border-gray-400">
+        <th className="px-2 sm:px-3 py-3 text-[10px] font-semibold text-slate-400 uppercase tracking-wider whitespace-nowrap print:hidden">
+          {isMobile ? 'Order' : '#'}
+        </th>
+        <th className="hidden print:table-cell px-2 py-2 text-xs font-bold text-gray-700 uppercase">#</th>
+        <th className="px-2 sm:px-3 py-3 text-[10px] font-semibold text-slate-400 uppercase tracking-wider print:text-gray-700 print:text-xs">Institute</th>
+        <th className="px-2 sm:px-3 py-3 text-[10px] font-semibold text-slate-400 uppercase tracking-wider print:text-gray-700 print:text-xs">Branch</th>
+        <th className="px-2 sm:px-3 py-3 text-[10px] font-semibold text-slate-400 uppercase tracking-wider print:text-gray-700 print:text-xs">Quota</th>
+        <th className="px-2 sm:px-3 py-3 text-[10px] font-semibold text-slate-400 uppercase tracking-wider whitespace-nowrap print:text-gray-700 print:text-xs">Seat Type</th>
+        {allRounds.map((round) => (
+          <th key={round} className="px-2 sm:px-3 py-3 text-[10px] font-semibold text-slate-400 uppercase tracking-wider text-center whitespace-nowrap print:text-gray-700 print:text-xs">
+            {round.replace(/round\s*/i, 'R')}
+            <br />
+            <span className="normal-case font-normal text-[9px] text-slate-500 print:text-gray-400">CR / OR</span>
+          </th>
+        ))}
+        <th className="px-2 sm:px-3 py-3 print:hidden" />
+      </tr>
+    </thead>
+  );
+
+  const tableBody = isMobile ? (
+    <tbody>
+      {priorityList.map((item, index) => (
+        <MobileRow
+          key={item.id}
+          item={item}
+          index={index}
+          total={priorityList.length}
+          allRounds={allRounds}
+          onRemove={onRemove}
+          onMoveUp={() => moveUp(index)}
+          onMoveDown={() => moveDown(index)}
+        />
+      ))}
+    </tbody>
+  ) : (
+    <SortableContext
+      items={priorityList.map((i) => i.id)}
+      strategy={verticalListSortingStrategy}
+    >
+      <tbody>
+        {priorityList.map((item, index) => (
+          <SortableRow
+            key={item.id}
+            item={item}
+            index={index}
+            allRounds={allRounds}
+            onRemove={onRemove}
+          />
+        ))}
+      </tbody>
+    </SortableContext>
+  );
+
+  const table = (
+    <div className="overflow-x-auto rounded-2xl border border-slate-800 bg-slate-900/60 print:border-0 print:bg-white print:rounded-none">
+      <table className="w-full text-left border-collapse" style={{ minWidth: 520 }}>
+        {tableHeader}
+        {tableBody}
+      </table>
+    </div>
+  );
+
   return (
     <div className="max-w-screen-2xl mx-auto px-3 sm:px-4 py-4 sm:py-6">
 
@@ -143,7 +252,9 @@ export default function ChoicesPage({ priorityList, onReorder, onRemove, onClear
           <p className="text-slate-500 text-xs sm:text-sm mt-0.5">
             {priorityList.length} choice{priorityList.length !== 1 ? 's' : ''}
             {priorityList.length > 0 && (
-              <span className="hidden sm:inline"> · drag rows to reorder · CR = Closing Rank, OR = Opening Rank</span>
+              isMobile
+                ? ' · tap ▲▼ to reorder'
+                : <span className="hidden sm:inline"> · drag rows to reorder · CR = Closing Rank, OR = Opening Rank</span>
             )}
           </p>
         </div>
@@ -176,7 +287,7 @@ export default function ChoicesPage({ priorityList, onReorder, onRemove, onClear
           Generated: {new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })}
           &nbsp;·&nbsp;Total choices: {priorityList.length}
         </p>
-        <p className="text-xs text-gray-400 mt-0.5">CR = Closing Rank · OR = Opening Rank (shown below CR in grey)</p>
+        <p className="text-xs text-gray-400 mt-0.5">CR = Closing Rank · OR = Opening Rank</p>
       </div>
 
       {priorityList.length === 0 ? (
@@ -190,68 +301,24 @@ export default function ChoicesPage({ priorityList, onReorder, onRemove, onClear
           </p>
         </div>
       ) : (
-        <DndContext
-          sensors={sensors}
-          collisionDetection={closestCenter}
-          onDragEnd={handleDragEnd}
-        >
-          {/* Scroll hint on mobile */}
-          <p className="sm:hidden text-[10px] text-slate-600 mb-2 text-right">
-            ← scroll table horizontally →
-          </p>
-          <div className="overflow-x-auto rounded-2xl border border-slate-800 bg-slate-900/60 print:border-0 print:bg-white print:rounded-none">
-            <table className="w-full text-left border-collapse" style={{ minWidth: 520 }}>
-              <thead>
-                <tr className="border-b border-slate-700 print:border-gray-400">
-                  <th className="px-2 sm:px-3 py-3 text-[10px] font-semibold text-slate-400 uppercase tracking-wider whitespace-nowrap print:hidden">
-                    #
-                  </th>
-                  <th className="hidden print:table-cell px-2 py-2 text-xs font-bold text-gray-700 uppercase">#</th>
-
-                  <th className="px-2 sm:px-3 py-3 text-[10px] font-semibold text-slate-400 uppercase tracking-wider print:text-gray-700 print:text-xs">
-                    Institute
-                  </th>
-                  <th className="px-2 sm:px-3 py-3 text-[10px] font-semibold text-slate-400 uppercase tracking-wider print:text-gray-700 print:text-xs">
-                    Branch / Program
-                  </th>
-                  <th className="px-2 sm:px-3 py-3 text-[10px] font-semibold text-slate-400 uppercase tracking-wider print:text-gray-700 print:text-xs">
-                    Quota
-                  </th>
-                  <th className="px-2 sm:px-3 py-3 text-[10px] font-semibold text-slate-400 uppercase tracking-wider whitespace-nowrap print:text-gray-700 print:text-xs">
-                    Seat Type
-                  </th>
-                  {allRounds.map((round) => (
-                    <th
-                      key={round}
-                      className="px-2 sm:px-3 py-3 text-[10px] font-semibold text-slate-400 uppercase tracking-wider text-center whitespace-nowrap print:text-gray-700 print:text-xs"
-                    >
-                      {round.replace(/round\s*/i, 'R')}
-                      <br />
-                      <span className="normal-case font-normal text-[9px] text-slate-500 print:text-gray-400">CR / OR</span>
-                    </th>
-                  ))}
-                  <th className="px-2 sm:px-3 py-3 print:hidden" />
-                </tr>
-              </thead>
-              <tbody>
-                <SortableContext
-                  items={priorityList.map((i) => i.id)}
-                  strategy={verticalListSortingStrategy}
-                >
-                  {priorityList.map((item, index) => (
-                    <SortableRow
-                      key={item.id}
-                      item={item}
-                      index={index}
-                      allRounds={allRounds}
-                      onRemove={onRemove}
-                    />
-                  ))}
-                </SortableContext>
-              </tbody>
-            </table>
-          </div>
-        </DndContext>
+        <>
+          {isMobile && (
+            <p className="text-[10px] text-slate-600 mb-2 text-right sm:hidden">
+              ← scroll table horizontally →
+            </p>
+          )}
+          {isMobile ? (
+            table
+          ) : (
+            <DndContext
+              sensors={sensors}
+              collisionDetection={closestCenter}
+              onDragEnd={handleDragEnd}
+            >
+              {table}
+            </DndContext>
+          )}
+        </>
       )}
     </div>
   );
