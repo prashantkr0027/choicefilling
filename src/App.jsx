@@ -1,37 +1,40 @@
 /**
  * App.jsx
  *
- * Auth flow (powered by Supabase Google OAuth):
+ * Auth flow (Supabase Google OAuth):
  *
- *   mount
- *    └─ onAuthStateChange listener registered
- *        ├─ INITIAL_SESSION, session=null  → 'unauthenticated' (show LoginScreen)
- *        ├─ INITIAL_SESSION, session=user  → boot(user)
- *        ├─ SIGNED_IN                      → boot(user)   (OAuth callback return)
- *        └─ SIGNED_OUT                     → 'unauthenticated'
+ *   mount → onAuthStateChange registered
+ *     ├─ INITIAL_SESSION, session=null  → 'unauthenticated'
+ *     ├─ INITIAL_SESSION, session=user  → boot(user)
+ *     ├─ SIGNED_IN, !hasBooted         → boot(user)   (OAuth callback)
+ *     ├─ TOKEN_REFRESHED / USER_UPDATED → ignored (tab focus, etc.)
+ *     └─ SIGNED_OUT                    → reset + 'unauthenticated'
  *
  *   boot(user):
- *    ├─ migrateFromLocalStorage(user.id)  ← one-shot, then legacy keys deleted
- *    ├─ fetchChoices(user.id)             ← load from Supabase
- *    └─ setAppState('ready')              ← triggers Realtime subscription
+ *     hasBootedRef = true  immediately  ← blocks any re-entry for this session
+ *     migrateFromLocalStorage()         ← fire-and-forget, does not block timeout
+ *     fetchChoices()  vs  5s timeout    ← whichever resolves first
+ *       timeout → show app with current list (empty on first load)
+ *       success → setPriorityList(list)
+ *     → 'ready' in both cases
  *
- * Mutation contract:
- *   priorityListRef is always current → no stale closures.
- *   setPriorityList updates UI immediately; syncToCloud is fire-and-forget.
+ * Tab focus / visibility changes:
+ *   Supabase may emit TOKEN_REFRESHED (or even SIGNED_IN on some versions).
+ *   hasBootedRef stays true after the first boot, so those events are no-ops.
  *
  * Realtime:
  *   Self-echoes suppressed by JSON comparison.
- *   Genuine remote changes show a "Synced from another device" toast.
+ *   Remote changes → "Synced from another device" toast for 2.5 s.
  *   Channel removed on unmount / sign-out.
  */
 
 import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { Routes, Route } from 'react-router-dom';
 
-import Navbar       from './components/Navbar';
-import LoginScreen  from './components/LoginScreen';
-import HomePage     from './pages/HomePage';
-import ChoicesPage  from './pages/ChoicesPage';
+import Navbar      from './components/Navbar';
+import LoginScreen from './components/LoginScreen';
+import HomePage    from './pages/HomePage';
+import ChoicesPage from './pages/ChoicesPage';
 import {
   supabase,
   signOut,
@@ -45,51 +48,75 @@ const LEGACY_CHOICES_KEY = 'josaa_choices';
 const LEGACY_VERSION_KEY = 'josaa_choices_version';
 const LEGACY_USER_KEY    = 'josaa_user';
 
+// ── Timeout for Supabase fetch on boot (ms) ───────────────────────────────────
+const BOOT_TIMEOUT_MS = 5000;
+
+// ── Sentinel value to distinguish timeout from a real list ────────────────────
+const TIMEOUT_SENTINEL = '__TIMEOUT__';
+
 // ── App states ────────────────────────────────────────────────────────────────
-// 'checking'       → waiting for INITIAL_SESSION from Supabase
-// 'unauthenticated'→ no session — show LoginScreen
-// 'loading'        → authenticated, fetching choices from Supabase
-// 'ready'          → normal app + Realtime active
-// 'error'          → fetch failed after auth
+// 'checking'        → waiting for INITIAL_SESSION
+// 'unauthenticated' → no session — show LoginScreen
+// 'loading'         → authenticated, fetching choices
+// 'ready'           → normal app + Realtime active
+// 'error'           → unrecoverable fetch failure
 
 export default function App() {
   const [appState,     setAppState]     = useState('checking');
-  const [authUser,     setAuthUser]     = useState(null);   // supabase User object
+  const [authUser,     setAuthUser]     = useState(null);
   const [priorityList, setPriorityList] = useState([]);
   const [loadError,    setLoadError]    = useState(null);
 
-  // Sync toast — shown when a remote Realtime update arrives
-  const [syncToast, setSyncToast]  = useState(false);
+  const [syncToast, setSyncToast] = useState(false);
   const toastTimerRef = useRef(null);
 
-  // Always-current refs — eliminate stale closures in callbacks
+  // Always-current refs — no stale closures in callbacks
   const priorityListRef = useRef([]);
   const authUserRef     = useRef(null);
   priorityListRef.current = priorityList;
   authUserRef.current     = authUser;
 
-  // Guard: prevent boot() from running twice for the same sign-in event
-  const bootingRef = useRef(false);
+  /**
+   * hasBootedRef — set to true the moment boot() begins.
+   * Stays true for the lifetime of the authenticated session.
+   * Only reset on SIGNED_OUT.
+   *
+   * This ensures that tab-focus events (TOKEN_REFRESHED, or a duplicate
+   * SIGNED_IN emitted by some Supabase client versions) never re-trigger
+   * the loading spinner.
+   */
+  const hasBootedRef = useRef(false);
 
-  // ── Auth listener ────────────────────────────────────────────────────────────
+  // ── Auth listener — registered once on mount ──────────────────────────────
   useEffect(() => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (event, session) => {
-        if (
-          (event === 'INITIAL_SESSION' || event === 'SIGNED_IN') &&
-          session?.user
-        ) {
-          if (!bootingRef.current) {
-            await boot(session.user);
+      (event, session) => {
+        if (event === 'INITIAL_SESSION') {
+          if (session?.user && !hasBootedRef.current) {
+            boot(session.user);
+          } else if (!session) {
+            setAppState('unauthenticated');
           }
-        } else if (event === 'INITIAL_SESSION' && !session) {
-          setAppState('unauthenticated');
+          // If INITIAL_SESSION fires after we've already booted (shouldn't
+          // happen, but defensive) → ignore.
+
+        } else if (event === 'SIGNED_IN') {
+          // OAuth callback after Google redirect — only boot once.
+          if (session?.user && !hasBootedRef.current) {
+            boot(session.user);
+          }
+          // If already booted (e.g. duplicate SIGNED_IN on tab focus) → ignore.
+
         } else if (event === 'SIGNED_OUT') {
-          bootingRef.current = false;
+          hasBootedRef.current = false;
           setAuthUser(null);
           setPriorityList([]);
+          setSyncToast(false);
+          clearTimeout(toastTimerRef.current);
           setAppState('unauthenticated');
         }
+
+        // TOKEN_REFRESHED, USER_UPDATED, PASSWORD_RECOVERY → intentionally ignored.
       }
     );
 
@@ -99,23 +126,52 @@ export default function App() {
     };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ── Boot after authentication ─────────────────────────────────────────────
+  // ── Boot — runs exactly once per authenticated session ────────────────────
   async function boot(user) {
-    bootingRef.current = true;
+    // Claim the slot immediately — prevents any concurrent/subsequent calls
+    hasBootedRef.current = true;
+
     setAuthUser(user);
     setAppState('loading');
     setLoadError(null);
+
+    // Migration is fire-and-forget: it runs in the background and does NOT
+    // count against the 5-second timeout. Worst case it finishes after we've
+    // already shown the app.
+    migrateFromLocalStorage(user.id).catch((err) =>
+      console.warn('[Migration] Background migration failed:', err.message)
+    );
+
     try {
-      await migrateFromLocalStorage(user.id);
-      const list = await fetchChoices(user.id);
-      setPriorityList(list);
-      setAppState('ready');           // triggers the Realtime subscription below
+      // Race the Supabase fetch against a 5-second timeout.
+      // On timeout we resolve (not reject) with TIMEOUT_SENTINEL so the app
+      // shows immediately with whatever was already in priorityListRef (empty
+      // on first load, or the previously rendered list on a re-boot attempt).
+      const result = await Promise.race([
+        fetchChoices(user.id),
+        new Promise((resolve) =>
+          setTimeout(() => resolve(TIMEOUT_SENTINEL), BOOT_TIMEOUT_MS)
+        ),
+      ]);
+
+      if (result === TIMEOUT_SENTINEL) {
+        console.warn(
+          `[App] Supabase fetch timed out after ${BOOT_TIMEOUT_MS / 1000}s ` +
+          '— showing app with current list.'
+        );
+        // priorityList stays as-is (empty on first load)
+      } else {
+        setPriorityList(result);
+      }
+
+      setAppState('ready');
     } catch (err) {
+      // An actual error (network failure, auth error, etc.) — show error screen
       console.error('[App] Boot failed:', err);
       setLoadError(err.message);
       setAppState('error');
-    } finally {
-      bootingRef.current = false;
+      // Allow retry to re-boot
+      hasBootedRef.current = false;
     }
   }
 
@@ -132,7 +188,6 @@ export default function App() {
       console.info(`[Migration] ✓ Migrated ${parsed.length} choices → Supabase`);
     }
 
-    // Always wipe legacy keys so this never runs again
     [LEGACY_CHOICES_KEY, LEGACY_VERSION_KEY, LEGACY_USER_KEY].forEach(
       (k) => localStorage.removeItem(k)
     );
@@ -143,7 +198,6 @@ export default function App() {
     if (appState !== 'ready' || !authUser) return;
 
     const channel = subscribeToChoices(authUser.id, (incomingList) => {
-      // Suppress self-echo: skip if data matches what we already have
       if (JSON.stringify(incomingList) === JSON.stringify(priorityListRef.current)) return;
 
       console.info('[Realtime] Remote update — applying to UI');
@@ -160,7 +214,7 @@ export default function App() {
     };
   }, [appState, authUser]);
 
-  // ── Cloud sync ────────────────────────────────────────────────────────────
+  // ── Cloud sync — fire-and-forget ──────────────────────────────────────────
   const syncToCloud = useCallback(async (list) => {
     const user = authUserRef.current;
     if (!user) return;
@@ -200,12 +254,11 @@ export default function App() {
 
   const handleLogout = useCallback(async () => {
     try { await signOut(); } catch (err) { console.warn('[App] Sign-out error:', err.message); }
-    // onAuthStateChange SIGNED_OUT event resets state
+    // onAuthStateChange SIGNED_OUT resets all state
   }, []);
 
   // ── Render ────────────────────────────────────────────────────────────────
 
-  // Full-screen spinner for 'checking' and 'loading'
   if (appState === 'checking' || appState === 'loading') {
     return (
       <div className="fixed inset-0 bg-slate-950 flex flex-col items-center justify-center gap-5">
@@ -223,12 +276,10 @@ export default function App() {
     );
   }
 
-  // Not authenticated — protect all routes
   if (appState === 'unauthenticated') {
     return <LoginScreen />;
   }
 
-  // Boot failed
   if (appState === 'error') {
     return (
       <div className="fixed inset-0 bg-slate-950 flex flex-col items-center justify-center gap-4 text-center p-6">
