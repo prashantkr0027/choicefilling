@@ -9,34 +9,36 @@ import {
 } from '@dnd-kit/core';
 import { arrayMove } from '@dnd-kit/sortable';
 
-
-import FilterBar from '../components/FilterBar';
-import CutoffCard from '../components/CutoffCard';
+import FilterBar    from '../components/FilterBar';
+import CutoffCard   from '../components/CutoffCard';
 import PriorityList from '../components/PriorityList';
 import ExportButton from '../components/ExportButton';
 import { loadAllBundledFiles, BUNDLED_FILES } from '../utils/parseHTML';
 import { groupRows } from '../utils/groupRows';
 
+// ── Default filter state ───────────────────────────────────────────────────────
 const DEFAULT_FILTERS = {
-  institute: '',
-  branch: '',
-  round: 'All',
-  seatType: 'All',
-  quota: 'All',
-  gender: 'All',
+  institute:     '',
+  branch:        '',
+  round:         'All',
+  category:      'All',   // base category: OPEN | EWS | OBC-NCL | SC | ST
+  pwd:           false,   // when true, look for "<category> (PwD)" seat types
+  quota:         'All',   // OS | HS | AI
+  gender:        'All',   // Gender-Neutral | Female-Only
+  instituteType: 'All',   // NIT | IIIT | IIT | GFTI
 };
 
 const PAGE_SIZE = 60;
 
 export default function HomePage({ priorityList, onAdd, onRemove, onClear, onReorder }) {
-  const [allRows, setAllRows] = useState([]);
-  const [filters, setFilters] = useState(DEFAULT_FILTERS);
+  const [allRows,        setAllRows]        = useState([]);
+  const [filters,        setFilters]        = useState(DEFAULT_FILTERS);
   const [activeDragItem, setActiveDragItem] = useState(null);
-  const [page, setPage] = useState(1);
-  const [isLoading, setIsLoading] = useState(true);
-  const [loadError, setLoadError] = useState(null);
+  const [page,           setPage]           = useState(1);
+  const [isLoading,      setIsLoading]      = useState(true);
+  const [loadError,      setLoadError]      = useState(null);
 
-  // Auto-load bundled files on mount
+  // Load all bundled HTML files on mount
   useEffect(() => {
     setIsLoading(true);
     loadAllBundledFiles()
@@ -48,32 +50,49 @@ export default function HomePage({ priorityList, onAdd, onRemove, onClear, onReo
       .finally(() => setIsLoading(false));
   }, []);
 
-  // Reset page on filter/data change
+  // Reset to page 1 whenever filters or data change
   useEffect(() => { setPage(1); }, [filters, allRows]);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } })
   );
 
-
-
   const handleFilterChange = useCallback((key, value) => {
     setFilters((prev) => ({ ...prev, [key]: value }));
   }, []);
 
-  // Group flat rows into per-combo grouped items
+  // Group flat rows → unique (instituteType, institute, program, quota, seatType, gender) combos
   const groupedItems = useMemo(() => groupRows(allRows), [allRows]);
 
-  // Filter grouped items
+  // Apply all active filters
   const filteredItems = useMemo(() => {
     return groupedItems.filter((item) => {
+      // ── Institute Type ──
+      if (filters.instituteType !== 'All' && item.instituteType !== filters.instituteType) return false;
+
+      // ── Text search ──
       if (filters.institute && !item.institute.toLowerCase().includes(filters.institute.toLowerCase())) return false;
-      if (filters.branch && !item.program.toLowerCase().includes(filters.branch.toLowerCase())) return false;
-      if (filters.seatType !== 'All' && item.seatType !== filters.seatType) return false;
-      if (filters.quota !== 'All' && item.quota !== filters.quota) return false;
-      if (filters.gender !== 'All' && item.gender !== filters.gender) return false;
-      // Round filter: only show items that have data for that round
+      if (filters.branch    && !item.program.toLowerCase().includes(filters.branch.toLowerCase()))    return false;
+
+      // ── Round ── (item must have data for that round)
       if (filters.round !== 'All' && !item.rounds[filters.round]) return false;
+
+      // ── Category / Seat Type + PwD ──
+      if (filters.category !== 'All') {
+        // PwD enabled → match "<category> (PwD)", else match "<category>" exactly
+        const target = filters.pwd ? `${filters.category} (PwD)` : filters.category;
+        if (item.seatType !== target) return false;
+      } else if (filters.pwd) {
+        // No specific category but PwD on → show only PwD seat types
+        if (!item.seatType.includes('(PwD)')) return false;
+      }
+
+      // ── Quota ──
+      if (filters.quota !== 'All' && item.quota !== filters.quota) return false;
+
+      // ── Gender ──
+      if (filters.gender !== 'All' && item.gender !== filters.gender) return false;
+
       return true;
     });
   }, [groupedItems, filters]);
@@ -88,7 +107,22 @@ export default function HomePage({ priorityList, onAdd, onRemove, onClear, onReo
     [priorityList]
   );
 
-  // DnD: left-panel card dragged onto right-panel drop zone
+  // Count active (non-default) filters for the badge
+  const activeFilterCount = useMemo(() => {
+    let count = 0;
+    if (filters.instituteType !== 'All') count++;
+    if (filters.round         !== 'All') count++;
+    if (filters.category      !== 'All') count++;
+    if (filters.pwd)                     count++;
+    if (filters.quota         !== 'All') count++;
+    if (filters.gender        !== 'All') count++;
+    if (filters.institute.trim())        count++;
+    if (filters.branch.trim())           count++;
+    return count;
+  }, [filters]);
+
+  // ── DnD handlers ─────────────────────────────────────────────────────────────
+
   const handleDragStart = useCallback(({ active }) => {
     const item = active.data.current?.item;
     if (item) setActiveDragItem(item);
@@ -116,6 +150,8 @@ export default function HomePage({ priorityList, onAdd, onRemove, onClear, onReo
 
   const hasMore = paginatedItems.length < filteredItems.length;
 
+  // ── Render ────────────────────────────────────────────────────────────────────
+
   return (
     <DndContext
       sensors={sensors}
@@ -128,24 +164,40 @@ export default function HomePage({ priorityList, onAdd, onRemove, onClear, onReo
         {/* ═══ LEFT PANEL ═══ */}
         <div className="flex-1 min-w-0 flex flex-col gap-4">
 
-
-          {/* Filters */}
+          {/* Filters panel */}
           {!isLoading && !loadError && groupedItems.length > 0 && (
             <div className="rounded-2xl border border-slate-800 bg-slate-900/60 p-4">
-              <div className="flex items-center gap-2 mb-3">
+              <div className="flex items-center gap-2 mb-3.5">
                 <span className="text-base">🔍</span>
                 <h2 className="text-slate-200 font-bold text-sm">Filters</h2>
+                {activeFilterCount > 0 && (
+                  <span className="px-1.5 py-0.5 rounded-full bg-indigo-600 text-white text-[9px] font-bold leading-none">
+                    {activeFilterCount}
+                  </span>
+                )}
                 <span className="ml-auto text-xs text-slate-500">
-                  {filteredItems.length.toLocaleString()} / {groupedItems.length.toLocaleString()} combos
-                  <span className="text-slate-600 ml-1">({allRows.length.toLocaleString()} total rows)</span>
+                  {filteredItems.length.toLocaleString()}
+                  <span className="text-slate-700"> / {groupedItems.length.toLocaleString()} combos</span>
                 </span>
+                {activeFilterCount > 0 && (
+                  <button
+                    onClick={() => setFilters(DEFAULT_FILTERS)}
+                    className="text-[10px] text-indigo-400 hover:text-indigo-300 transition-colors"
+                  >
+                    Reset all
+                  </button>
+                )}
               </div>
-              {/* Pass flat allRows for deriving filter options (so all values appear) */}
-              <FilterBar rows={allRows} filters={filters} onFilterChange={handleFilterChange} />
+              {/* Pass groupedItems for round detection */}
+              <FilterBar
+                groupedItems={groupedItems}
+                filters={filters}
+                onFilterChange={handleFilterChange}
+              />
             </div>
           )}
 
-          {/* Cards */}
+          {/* ── Cards area ── */}
           {isLoading ? (
             <div className="flex-1 flex flex-col items-center justify-center gap-4 py-20">
               <div className="relative w-16 h-16">
@@ -155,7 +207,7 @@ export default function HomePage({ priorityList, onAdd, onRemove, onClear, onReo
               <div className="text-center">
                 <p className="text-slate-200 font-semibold">Loading cutoff data…</p>
                 <p className="text-slate-500 text-xs mt-1">
-                  Parsing {BUNDLED_FILES.length} round files
+                  Parsing {BUNDLED_FILES.length} files (NITs · IIITs · IITs · GFTIs)
                 </p>
               </div>
             </div>

@@ -11,11 +11,18 @@ const QUOTA_COLORS = {
 };
 
 const SEAT_COLORS = {
-  OPEN: 'bg-slate-600/60 text-slate-300',
-  EWS: 'bg-yellow-500/20 text-yellow-300',
+  OPEN:    'bg-slate-600/60 text-slate-300',
+  EWS:     'bg-yellow-500/20 text-yellow-300',
   'OBC-NCL': 'bg-orange-500/20 text-orange-300',
-  SC: 'bg-pink-500/20 text-pink-300',
-  ST: 'bg-red-500/20 text-red-300',
+  SC:      'bg-pink-500/20 text-pink-300',
+  ST:      'bg-red-500/20 text-red-300',
+};
+
+const INSTITUTE_TYPE_COLORS = {
+  NIT:  'bg-blue-500/15 text-blue-300 border-blue-500/30',
+  IIIT: 'bg-violet-500/15 text-violet-300 border-violet-500/30',
+  IIT:  'bg-amber-500/15 text-amber-300 border-amber-500/30',
+  GFTI: 'bg-teal-500/15 text-teal-300 border-teal-500/30',
 };
 
 function getSeatColor(seatType) {
@@ -67,6 +74,14 @@ export default function CutoffCard({ item, onAdd, isAdded, activeRound }) {
       <div className="p-3">
         {/* Badges row */}
         <div className="flex items-center gap-1.5 mb-2 flex-wrap">
+          {/* Institute type badge */}
+          {item.instituteType && item.instituteType !== 'Unknown' && (
+            <span className={`text-[9px] font-black px-1.5 py-0.5 rounded border tracking-wide ${
+              INSTITUTE_TYPE_COLORS[item.instituteType] ?? 'bg-slate-700 text-slate-300 border-slate-600'
+            }`}>
+              {item.instituteType}
+            </span>
+          )}
           <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${quotaClass}`}>
             {item.quota}
           </span>

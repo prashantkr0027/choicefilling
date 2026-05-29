@@ -1,18 +1,19 @@
 /**
  * groupRows.js
- * Groups flat cutoff rows by unique (institute, program, quota, seatType, gender).
- * Each group contains a `rounds` map of all round data for that combination.
+ * Groups flat cutoff rows by unique (instituteType, institute, program, quota, seatType, gender).
+ * Each group contains a `rounds` map with OR/CR for every round that has data.
  */
 
 /**
  * @param {Array<Object>} rows - flat parsed rows from parseHTML
- * @returns {Array<Object>}   - deduplicated grouped items
+ * @returns {Array<Object>}    - deduplicated grouped items
  */
 export function groupRows(rows) {
   const groups = new Map();
 
   for (const row of rows) {
     const key = [
+      row.instituteType,
       row.institute,
       row.program,
       row.quota,
@@ -22,13 +23,14 @@ export function groupRows(rows) {
 
     if (!groups.has(key)) {
       groups.set(key, {
-        id: key,
-        institute: row.institute,
-        program: row.program,
-        quota: row.quota,
-        seatType: row.seatType,
-        gender: row.gender,
-        rounds: {},
+        id:           key,
+        instituteType: row.instituteType,
+        institute:    row.institute,
+        program:      row.program,
+        quota:        row.quota,
+        seatType:     row.seatType,
+        gender:       row.gender,
+        rounds:       {},
       });
     }
 
