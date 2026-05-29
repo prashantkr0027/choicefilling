@@ -1,7 +1,7 @@
 import React from 'react';
 import { NavLink } from 'react-router-dom';
 
-export default function Navbar({ priorityCount, userEmail, onLogout }) {
+export default function Navbar({ priorityCount, userEmail, isShared, onLogout }) {
   const navLinkClass = ({ isActive }) =>
     `px-3 py-1.5 rounded-lg text-sm font-medium transition-all duration-200 ${
       isActive
@@ -59,6 +59,12 @@ export default function Navbar({ priorityCount, userEmail, onLogout }) {
               <span className="text-xs text-slate-400 hidden sm:inline max-w-[160px] truncate">
                 {userEmail}
               </span>
+              {/* Shared-list badge */}
+              {isShared && (
+                <span className="text-[9px] font-black px-1.5 py-0.5 rounded-full bg-violet-500/20 text-violet-300 border border-violet-500/30 tracking-wide">
+                  Shared
+                </span>
+              )}
               <button
                 onClick={onLogout}
                 title="Sign out"

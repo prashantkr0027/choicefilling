@@ -41,6 +41,8 @@ import {
   fetchChoices,
   upsertChoices,
   subscribeToChoices,
+  resolveStorageKey,
+  SHARED_KEY,
 } from './lib/supabase';
 
 // ── Legacy localStorage keys (one-time migration) ─────────────────────────────
@@ -73,6 +75,7 @@ export default function App() {
   // Always-current refs — no stale closures in callbacks
   const priorityListRef = useRef([]);
   const authUserRef     = useRef(null);
+  const storageKeyRef   = useRef(null);   // resolveStorageKey(user) — set once per session
   priorityListRef.current = priorityList;
   authUserRef.current     = authUser;
 
@@ -131,24 +134,22 @@ export default function App() {
     // Claim the slot immediately — prevents any concurrent/subsequent calls
     hasBootedRef.current = true;
 
+    // Resolve storage key FIRST — this determines which Supabase row we own
+    const storageKey = resolveStorageKey(user);
+    storageKeyRef.current = storageKey;
+
     setAuthUser(user);
     setAppState('loading');
     setLoadError(null);
 
-    // Migration is fire-and-forget: it runs in the background and does NOT
-    // count against the 5-second timeout. Worst case it finishes after we've
-    // already shown the app.
-    migrateFromLocalStorage(user.id).catch((err) =>
+    // Migration is fire-and-forget — does not count against the 5-second timeout
+    migrateFromLocalStorage(storageKey).catch((err) =>
       console.warn('[Migration] Background migration failed:', err.message)
     );
 
     try {
-      // Race the Supabase fetch against a 5-second timeout.
-      // On timeout we resolve (not reject) with TIMEOUT_SENTINEL so the app
-      // shows immediately with whatever was already in priorityListRef (empty
-      // on first load, or the previously rendered list on a re-boot attempt).
       const result = await Promise.race([
-        fetchChoices(user.id),
+        fetchChoices(storageKey),
         new Promise((resolve) =>
           setTimeout(() => resolve(TIMEOUT_SENTINEL), BOOT_TIMEOUT_MS)
         ),
@@ -159,24 +160,21 @@ export default function App() {
           `[App] Supabase fetch timed out after ${BOOT_TIMEOUT_MS / 1000}s ` +
           '— showing app with current list.'
         );
-        // priorityList stays as-is (empty on first load)
       } else {
         setPriorityList(result);
       }
 
       setAppState('ready');
     } catch (err) {
-      // An actual error (network failure, auth error, etc.) — show error screen
       console.error('[App] Boot failed:', err);
       setLoadError(err.message);
       setAppState('error');
-      // Allow retry to re-boot
       hasBootedRef.current = false;
     }
   }
 
   // ── One-shot localStorage → Supabase migration ────────────────────────────
-  async function migrateFromLocalStorage(userId) {
+  async function migrateFromLocalStorage(storageKey) {
     const raw = localStorage.getItem(LEGACY_CHOICES_KEY);
     if (!raw) return;
 
@@ -184,8 +182,8 @@ export default function App() {
     try { parsed = JSON.parse(raw); } catch { /* corrupt — skip upload */ }
 
     if (Array.isArray(parsed) && parsed.length > 0) {
-      await upsertChoices(userId, parsed);
-      console.info(`[Migration] ✓ Migrated ${parsed.length} choices → Supabase`);
+      await upsertChoices(storageKey, parsed);
+      console.info(`[Migration] ✓ Migrated ${parsed.length} choices → Supabase (key: ${storageKey})`);
     }
 
     [LEGACY_CHOICES_KEY, LEGACY_VERSION_KEY, LEGACY_USER_KEY].forEach(
@@ -197,7 +195,8 @@ export default function App() {
   useEffect(() => {
     if (appState !== 'ready' || !authUser) return;
 
-    const channel = subscribeToChoices(authUser.id, (incomingList) => {
+    const storageKey = storageKeyRef.current;
+    const channel = subscribeToChoices(storageKey, (incomingList) => {
       if (JSON.stringify(incomingList) === JSON.stringify(priorityListRef.current)) return;
 
       console.info('[Realtime] Remote update — applying to UI');
@@ -216,10 +215,10 @@ export default function App() {
 
   // ── Cloud sync — fire-and-forget ──────────────────────────────────────────
   const syncToCloud = useCallback(async (list) => {
-    const user = authUserRef.current;
-    if (!user) return;
+    const storageKey = storageKeyRef.current;
+    if (!storageKey) return;
     try {
-      await upsertChoices(user.id, list);
+      await upsertChoices(storageKey, list);
     } catch (err) {
       console.warn('[App] Sync failed:', err.message);
     }
@@ -313,6 +312,7 @@ export default function App() {
       <Navbar
         priorityCount={priorityList.length}
         userEmail={authUser?.email ?? null}
+        isShared={storageKeyRef.current === SHARED_KEY}
         onLogout={handleLogout}
       />
 
