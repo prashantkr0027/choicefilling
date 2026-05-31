@@ -58,6 +58,11 @@ export default function PriorityItem({ item, index, onRemove }) {
       {/* Content */}
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-1.5 mb-0.5 flex-wrap">
+          {item.source === 'CSAB' && (
+            <span className="text-[9px] font-black px-1.5 py-0.5 rounded border tracking-wide bg-amber-500/20 text-amber-300 border-amber-500/40">
+              CSAB
+            </span>
+          )}
           <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-slate-700 text-slate-400">
             {item.quota}
           </span>

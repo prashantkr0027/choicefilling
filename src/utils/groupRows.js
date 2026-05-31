@@ -1,7 +1,15 @@
 /**
  * groupRows.js
- * Groups flat cutoff rows by unique (instituteType, institute, program, quota, seatType, gender).
- * Each group contains a `rounds` map with OR/CR for every round that has data.
+ * Groups flat cutoff rows by unique combination of source + instituteType +
+ * institute + program + quota + seatType + gender.
+ *
+ * KEY DESIGN:
+ *   JoSAA items — key = "NIT|||institute|||..."          (NO source prefix)
+ *   CSAB items  — key = "CSAB|||NIT|||institute|||..."   ('CSAB|||' prefix)
+ *
+ * Keeping JoSAA items without a source prefix preserves all existing IDs
+ * that users may have stored in their Supabase preference_list, so switching
+ * to CSAB support never invalidates saved JoSAA choices.
  */
 
 /**
@@ -12,18 +20,19 @@ export function groupRows(rows) {
   const groups = new Map();
 
   for (const row of rows) {
-    const key = [
-      row.instituteType,
-      row.institute,
-      row.program,
-      row.quota,
-      row.seatType,
-      row.gender,
-    ].join('|||');
+    const isCSAB = row.source === 'CSAB';
+
+    // JoSAA keeps legacy key format (no source prefix) to preserve stored IDs.
+    // CSAB gets a 'CSAB|||' prefix so it forms distinct groups from JoSAA rows
+    // for the same institute/program — both can live in the priority list together.
+    const key = isCSAB
+      ? ['CSAB', row.instituteType, row.institute, row.program, row.quota, row.seatType, row.gender].join('|||')
+      : [        row.instituteType, row.institute, row.program, row.quota, row.seatType, row.gender].join('|||');
 
     if (!groups.has(key)) {
       groups.set(key, {
         id:           key,
+        source:       row.source,       // 'JoSAA' | 'CSAB'
         instituteType: row.instituteType,
         institute:    row.institute,
         program:      row.program,
@@ -45,7 +54,10 @@ export function groupRows(rows) {
 
 /**
  * Sort a rounds map by round number ascending.
- * @param {Object} rounds  - { 'Round 1': {...}, 'Round 2': {...} }
+ * Works for both JoSAA ('Round 1', 'Round 6') and
+ * CSAB ('CSAB Round 1', 'CSAB Round 3') round labels.
+ *
+ * @param {Object} rounds  - { 'Round 1': {...}, 'CSAB Round 2': {...} }
  * @returns {Array<[string, Object]>} sorted entries
  */
 export function sortedRoundEntries(rounds) {

@@ -3,7 +3,8 @@ import { deriveAllRounds } from '../utils/groupRows';
 
 // ── Fixed filter options ──────────────────────────────────────────────────────
 
-const INSTITUTE_TYPES = ['NIT', 'IIIT', 'IIT', 'GFTI'];
+const INSTITUTE_TYPES_JOSAA = ['NIT', 'IIIT', 'IIT', 'GFTI'];
+const INSTITUTE_TYPES_CSAB  = ['NIT', 'IIIT', 'GFTI'];  // No IITs in CSAB
 
 const CATEGORIES = [
   { value: 'OPEN',    label: 'OPEN' },
@@ -107,6 +108,7 @@ export default function FilterBar({
   onFilterChange,
   userRank,
   onRankChange,
+  mode,
 }) {
   // Local rank input state (controlled by prop, saved on blur/Enter)
   const [rankInput, setRankInput] = useState(userRank ? String(userRank) : '');
@@ -139,6 +141,13 @@ export default function FilterBar({
   // Derive available rounds from loaded data
   const allRounds = useMemo(() => deriveAllRounds(groupedItems ?? []), [groupedItems]);
 
+  const isCSAB     = mode === 'csab';
+  const rankLabel  = isCSAB ? '🎯 Your CRL Rank' : '🎯 Your JEE Rank';
+  const instTypes  = isCSAB ? INSTITUTE_TYPES_CSAB : INSTITUTE_TYPES_JOSAA;
+  const rankNote   = isCSAB
+    ? 'CSAB uses CRL (Common Rank List) rank for all categories'
+    : 'Opening/Closing Ranks for Open Seats represent CRL. Opening/Closing Ranks for EWS, OBC-NCL, SC and ST Seats represent respective Category Ranks. Opening/Closing Ranks for PwD Seats represent PwD Ranks within Respective Categories.';
+
   const labelClass  = 'block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1.5';
   const inputClass  = `
     w-full bg-slate-800/80 border border-slate-700 rounded-lg px-3 py-1.5
@@ -153,9 +162,9 @@ export default function FilterBar({
       {/* ══ RANK SECTION ══════════════════════════════════════════════════════ */}
       <div className="rounded-xl border border-slate-700/60 bg-slate-800/30 p-3 flex flex-col gap-3">
 
-        {/* Your JEE Rank */}
+        {/* Your JEE/CRL Rank */}
         <div>
-          <label className={labelClass}>🎯 Your JEE Rank</label>
+          <label className={labelClass}>{rankLabel}</label>
           <div className="flex gap-2">
             <NumInput
               value={rankInput}
@@ -226,7 +235,7 @@ export default function FilterBar({
 
         {/* Clarification note */}
         <p className="text-[9px] text-slate-600 leading-relaxed border-t border-slate-700/60 pt-2.5 mt-0.5">
-          Opening/Closing Ranks for Open Seats represent CRL. Opening/Closing Ranks for EWS, OBC-NCL, SC and ST Seats represent respective Category Ranks. Opening/Closing Ranks for PwD Seats represent PwD Ranks within Respective Categories.
+          {rankNote}
         </p>
       </div>
 
@@ -234,7 +243,7 @@ export default function FilterBar({
       <div>
         <p className={labelClass}>Institute Type</p>
         <PillGroup
-          options={INSTITUTE_TYPES}
+          options={instTypes}
           value={filters.instituteType}
           onChange={(v) => onFilterChange('instituteType', v)}
           accent="indigo"

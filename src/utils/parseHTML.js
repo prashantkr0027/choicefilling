@@ -1,16 +1,25 @@
 /**
  * parseHTML.js
- * Parses a JoSAA Opening/Closing Rank HTML page (Ctrl+S saved from the portal).
+ * Parses JoSAA and CSAB Opening/Closing Rank HTML pages (Ctrl+S saved from portals).
  * Returns an array of cutoff row objects.
  *
- * Filename convention for bundled files:
- *   NITs R1.html  → instituteType = 'NIT',  round = 'Round 1'
- *   IIITs R3.html → instituteType = 'IIIT', round = 'Round 3'
- *   IITs R6.html  → instituteType = 'IIT',  round = 'Round 6'
- *   GFTIs R2.html → instituteType = 'GFTI', round = 'Round 2'
+ * Filename conventions:
+ *   NITs R1.html       → source='JoSAA', instituteType='NIT',  round='Round 1'
+ *   CSAB R2 NITs.html  → source='CSAB',  instituteType='NIT',  round='CSAB Round 2'
  */
 
 import { detectRound } from './roundDetect';
+
+// ── Source detection ───────────────────────────────────────────────────────────
+
+/**
+ * Detect whether a file is from CSAB or JoSAA based on its filename prefix.
+ * @param {string} filename
+ * @returns {'CSAB' | 'JoSAA'}
+ */
+export function detectSource(filename) {
+  return /^CSAB\b/i.test(filename ?? '') ? 'CSAB' : 'JoSAA';
+}
 
 // ── Institute-type detection ───────────────────────────────────────────────────
 
@@ -20,7 +29,6 @@ import { detectRound } from './roundDetect';
  */
 export function detectInstituteType(filename) {
   if (!filename) return 'Unknown';
-  // Plural forms: NITs, IIITs, IITs, GFTIs  (and singular JoSAA NIT …)
   if (/\bIIITs?\b/i.test(filename)) return 'IIIT';
   if (/\bIITs?\b/i.test(filename))  return 'IIT';
   if (/\bNITs?\b/i.test(filename))  return 'NIT';
@@ -28,26 +36,45 @@ export function detectInstituteType(filename) {
   return 'Unknown';
 }
 
-// ── Bundled file list ─────────────────────────────────────────────────────────
+// ── Round name derivation ──────────────────────────────────────────────────────
 
 /**
- * All HTML files present under public/data/.
- * Only the comprehensive per-type files are listed here.
- * The old single-institute files (JoSAA NIT R1.html, etc.) are superseded.
+ * Returns a fully-qualified round label, including the source prefix for CSAB.
+ *   JoSAA: "Round 1", "Round 2", …
+ *   CSAB:  "CSAB Round 1", "CSAB Round 2", …
  */
-export const BUNDLED_FILES = [
-  'NITs R1.html', 'NITs R2.html', 'NITs R3.html',
-  'NITs R4.html', 'NITs R5.html', 'NITs R6.html',
+export function detectFullRound(filename) {
+  const source   = detectSource(filename);
+  const rawRound = detectRound(filename); // → 'Round N' or 'Unknown Round'
+  return source === 'CSAB' ? rawRound.replace(/^Round/, 'CSAB Round') : rawRound;
+}
+
+// ── Bundled file lists ────────────────────────────────────────────────────────
+
+/** All 24 JoSAA files (NITs/IIITs/IITs/GFTIs × Rounds 1-6). */
+export const JOSAA_FILES = [
+  'NITs R1.html',  'NITs R2.html',  'NITs R3.html',
+  'NITs R4.html',  'NITs R5.html',  'NITs R6.html',
 
   'IIITs R1.html', 'IIITs R2.html', 'IIITs R3.html',
   'IIITs R4.html', 'IIITs R5.html', 'IIITs R6.html',
 
-  'IITs R1.html', 'IITs R2.html', 'IITs R3.html',
-  'IITs R4.html', 'IITs R5.html', 'IITs R6.html',
+  'IITs R1.html',  'IITs R2.html',  'IITs R3.html',
+  'IITs R4.html',  'IITs R5.html',  'IITs R6.html',
 
   'GFTIs R1.html', 'GFTIs R2.html', 'GFTIs R3.html',
   'GFTIs R4.html', 'GFTIs R5.html', 'GFTIs R6.html',
 ];
+
+/** All 9 CSAB Special Round files (NITs/IIITs/GFTIs × R1-R3). No IITs in CSAB. */
+export const CSAB_FILES = [
+  'CSAB R1 NITs.html',  'CSAB R2 NITs.html',  'CSAB R3 NITs.html',
+  'CSAB R1 IIITs.html', 'CSAB R2 IIITs.html', 'CSAB R3 IIITs.html',
+  'CSAB R1 GFTIs.html', 'CSAB R2 GFTIs.html', 'CSAB R3 GFTIs.html',
+];
+
+/** All bundled files — both JoSAA and CSAB, loaded once at startup. */
+export const BUNDLED_FILES = [...JOSAA_FILES, ...CSAB_FILES];
 
 // ── Fetch helpers ─────────────────────────────────────────────────────────────
 
@@ -57,7 +84,7 @@ export const BUNDLED_FILES = [
  * @returns {Promise<Array<Object>>}
  */
 export async function fetchAndParse(filename) {
-  const url = `/data/${encodeURIComponent(filename)}`;
+  const url      = `/data/${encodeURIComponent(filename)}`;
   const response = await fetch(url);
   if (!response.ok) {
     throw new Error(`Failed to fetch ${filename}: ${response.status} ${response.statusText}`);
@@ -67,7 +94,7 @@ export async function fetchAndParse(filename) {
 }
 
 /**
- * Load all bundled files from public/data/ concurrently.
+ * Load all bundled files (JoSAA + CSAB) concurrently.
  * Files that fail are skipped with a console warning.
  * @returns {Promise<Array<Object>>} flat array of all rows from all files
  */
@@ -90,20 +117,21 @@ export async function loadAllBundledFiles() {
 // ── Core parser ───────────────────────────────────────────────────────────────
 
 /**
- * Parse a JoSAA HTML cutoff page and return rows with instituteType + round tags.
+ * Parse a JoSAA/CSAB HTML cutoff page and return rows tagged with
+ * source, instituteType, and round.
  *
  * @param {string} htmlString  - Full HTML file content
- * @param {string} filename    - Original filename (used for round + type detection)
+ * @param {string} filename    - Original filename (used for detection)
  * @returns {Array<Object>}
  */
 export function parseJoSAAHtml(htmlString, filename) {
   const parser = new DOMParser();
   const doc    = parser.parseFromString(htmlString, 'text/html');
 
-  const round         = detectRound(filename);
-  const instituteType = detectInstituteType(filename);
+  const source        = detectSource(filename);         // 'JoSAA' | 'CSAB'
+  const round         = detectFullRound(filename);      // 'Round 3' | 'CSAB Round 2'
+  const instituteType = detectInstituteType(filename);  // 'NIT' | 'IIT' | …
 
-  // The main data table rendered by the JoSAA portal
   const table = doc.querySelector('#ctl00_ContentPlaceHolder1_GridView1');
   if (!table) {
     console.warn(`[parseHTML] Table not found in "${filename}"`);
@@ -114,7 +142,7 @@ export function parseJoSAAHtml(htmlString, filename) {
   const results = [];
 
   rows.forEach((row, index) => {
-    if (row.querySelector('th')) return;   // skip header row
+    if (row.querySelector('th')) return;  // skip header row
 
     const tds = row.querySelectorAll('td');
     if (tds.length < 7) return;
@@ -132,7 +160,8 @@ export function parseJoSAAHtml(htmlString, filename) {
     if (!institute || !program) return;
 
     results.push({
-      id:           `${filename}-${index}`,
+      id: `${filename}-${index}`,
+      source,
       institute,
       program,
       quota,

@@ -70,6 +70,7 @@ export default function App() {
   const [priorityList, setPriorityList] = useState([]);
   const [userRank,     setUserRank]     = useState(null);
   const [loadError,    setLoadError]    = useState(null);
+  const [mode,         setMode]         = useState('josaa'); // 'josaa' | 'csab'
 
   const [syncToast, setSyncToast] = useState(false);
   const toastTimerRef    = useRef(null);
@@ -289,6 +290,10 @@ export default function App() {
     // onAuthStateChange SIGNED_OUT resets all state
   }, []);
 
+  const handleModeChange = useCallback((newMode) => {
+    setMode(newMode);
+  }, []);
+
   // ── Render ────────────────────────────────────────────────────────────────
 
   if (appState === 'checking' || appState === 'loading') {
@@ -347,6 +352,8 @@ export default function App() {
         userEmail={authUser?.email ?? null}
         isShared={storageKeyRef.current === SHARED_KEY}
         onLogout={handleLogout}
+        mode={mode}
+        onModeChange={handleModeChange}
       />
 
       <Routes>
@@ -361,6 +368,7 @@ export default function App() {
               onReorder={handleReorder}
               userRank={userRank}
               onRankChange={handleRankChange}
+              mode={mode}
             />
           }
         />

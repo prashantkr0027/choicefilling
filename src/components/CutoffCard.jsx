@@ -104,6 +104,14 @@ function CardBody({ item, onAdd, isAdded, activeRound, isMobile, rankStatus }) {
             {item.instituteType}
           </span>
         )}
+
+        {/* CSAB source badge */}
+        {item.source === 'CSAB' && (
+          <span className="text-[9px] font-black px-1.5 py-0.5 rounded border tracking-wide bg-amber-500/20 text-amber-300 border-amber-500/40">
+            CSAB
+          </span>
+        )}
+
         <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${quotaClass}`}>
           {item.quota}
         </span>

@@ -36,7 +36,7 @@ const DEFAULT_FILTERS = {
 
 const PAGE_SIZE = 60;
 
-export default function HomePage({ priorityList, onAdd, onRemove, onClear, onReorder, userRank, onRankChange }) {
+export default function HomePage({ priorityList, onAdd, onRemove, onClear, onReorder, userRank, onRankChange, mode }) {
   const isMobile = useIsMobile();
 
   const [allRows,        setAllRows]        = useState([]);
@@ -72,6 +72,14 @@ export default function HomePage({ priorityList, onAdd, onRemove, onClear, onReo
     }
   }, [userRank]);
 
+  // Switch default rankRound when mode changes
+  useEffect(() => {
+    setFilters((prev) => ({
+      ...prev,
+      rankRound: mode === 'csab' ? 'CSAB Round 3' : 'Round 6',
+    }));
+  }, [mode]);
+
   useEffect(() => { setPage(1); }, [filters, allRows]);
 
   // Sensors — only used on desktop, but hooks must always be called
@@ -86,8 +94,12 @@ export default function HomePage({ priorityList, onAdd, onRemove, onClear, onReo
 
   const groupedItems = useMemo(() => groupRows(allRows), [allRows]);
 
+  // Filter by mode first, then apply all other filters
   const filteredItems = useMemo(() => {
     return groupedItems.filter((item) => {
+      // Mode gate — JoSAA mode shows only JoSAA source, CSAB shows only CSAB
+      if (mode === 'csab'  && item.source !== 'CSAB')   return false;
+      if (mode !== 'csab'  && item.source !== 'JoSAA')  return false;
       if (filters.instituteType !== 'All' && item.instituteType !== filters.instituteType) return false;
       if (filters.institute && !item.institute.toLowerCase().includes(filters.institute.toLowerCase())) return false;
       if (filters.branch    && !item.program.toLowerCase().includes(filters.branch.toLowerCase()))    return false;
@@ -241,6 +253,7 @@ export default function HomePage({ priorityList, onAdd, onRemove, onClear, onReo
                 onFilterChange={handleFilterChange}
                 userRank={userRank}
                 onRankChange={onRankChange}
+                mode={mode}
               />
             </div>
           </div>
@@ -299,6 +312,7 @@ export default function HomePage({ priorityList, onAdd, onRemove, onClear, onReo
                   isMobile={isMobile}
                   userRank={userRank}
                   compareRound={filters.rankRound}
+                  mode={mode}
                 />
               ))}
             </div>
