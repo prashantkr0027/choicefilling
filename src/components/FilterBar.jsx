@@ -138,8 +138,15 @@ export default function FilterBar({
     if (e.key === 'Enter') { e.target.blur(); }
   };
 
-  // Derive available rounds from loaded data
-  const allRounds = useMemo(() => deriveAllRounds(groupedItems ?? []), [groupedItems]);
+  // Derive available rounds from loaded data, filtered to the current mode.
+  // CSAB mode:  only 'CSAB Round N' labels ('CSAB R1', 'CSAB R2', 'CSAB R3')
+  // JoSAA mode: only plain 'Round N' labels ('R1' … 'R6')
+  const allRounds = useMemo(() => {
+    const rounds = deriveAllRounds(groupedItems ?? []);
+    return mode === 'csab'
+      ? rounds.filter((r) =>  r.startsWith('CSAB'))
+      : rounds.filter((r) => !r.startsWith('CSAB'));
+  }, [groupedItems, mode]);
 
   const isCSAB     = mode === 'csab';
   const rankLabel  = isCSAB ? '🎯 Your CRL Rank' : '🎯 Your JEE Rank';

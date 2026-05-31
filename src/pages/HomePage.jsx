@@ -72,10 +72,13 @@ export default function HomePage({ priorityList, onAdd, onRemove, onClear, onReo
     }
   }, [userRank]);
 
-  // Switch default rankRound when mode changes
+  // Switch defaults when mode changes:
+  //   • round     → 'All' (prevents stale JoSAA round persisting into CSAB mode)
+  //   • rankRound → most recent round for the selected mode
   useEffect(() => {
     setFilters((prev) => ({
       ...prev,
+      round:     'All',
       rankRound: mode === 'csab' ? 'CSAB Round 3' : 'Round 6',
     }));
   }, [mode]);

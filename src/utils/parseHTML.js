@@ -114,6 +114,46 @@ export async function loadAllBundledFiles() {
   return rows;
 }
 
+// ── CSAB field normalisation ─────────────────────────────────────────────────
+// CSAB HTML uses full-word column values that differ from JoSAA conventions.
+// All normalisations are applied ONLY when source === 'CSAB' so that existing
+// JoSAA parsing logic is completely unaffected.
+
+/**
+ * Map from CSAB quota long-form → short code used everywhere in the app.
+ */
+const CSAB_QUOTA_MAP = {
+  'all india':  'AI',
+  'home state': 'HS',
+  'other state': 'OS',
+};
+
+/**
+ * Normalise a single set of raw CSAB column values to match JoSAA conventions.
+ *
+ * @param {string} quota     - raw quota cell text from CSAB HTML
+ * @param {string} seatType  - raw seat-type cell text
+ * @param {string} gender    - raw gender cell text
+ * @returns {{ quota: string, seatType: string, gender: string }}
+ */
+function normalizeCSABFields(quota, seatType, gender) {
+  // Quota: "All India" → "AI", "Home State" → "HS", "Other State" → "OS"
+  const mappedQuota = CSAB_QUOTA_MAP[quota.toLowerCase().trim()];
+  const normQuota   = mappedQuota ?? quota.trim();
+
+  // Seat type: already matches JoSAA format (OPEN, EWS, SC, ST, OBC-NCL, …)
+  // — just trim any stray whitespace that some CSAB pages have.
+  const normSeatType = seatType.trim();
+
+  // Gender: "Female-only (including Supernumerary)" → "Female-Only"
+  //         "Gender-Neutral" (already correct, but normalise casing)
+  let normGender = gender.trim();
+  if (/female[\s-]only/i.test(normGender))    normGender = 'Female-Only';
+  else if (/gender[\s-]neutral/i.test(normGender)) normGender = 'Gender-Neutral';
+
+  return { quota: normQuota, seatType: normSeatType, gender: normGender };
+}
+
 // ── Core parser ───────────────────────────────────────────────────────────────
 
 /**
@@ -151,13 +191,19 @@ export function parseJoSAAHtml(htmlString, filename) {
 
     const institute   = getText(tds[0]);
     const program     = getText(tds[1]);
-    const quota       = getText(tds[2]);
-    const seatType    = getText(tds[3]);
-    const gender      = getText(tds[4]);
+    let   quota       = getText(tds[2]);
+    let   seatType    = getText(tds[3]);
+    let   gender      = getText(tds[4]);
     const openingRank = getText(tds[5]);
     const closingRank = getText(tds[6]);
 
     if (!institute || !program) return;
+
+    // Apply CSAB-specific normalisation so all downstream filters work
+    // identically for both JoSAA and CSAB data.
+    if (source === 'CSAB') {
+      ({ quota, seatType, gender } = normalizeCSABFields(quota, seatType, gender));
+    }
 
     results.push({
       id: `${filename}-${index}`,
