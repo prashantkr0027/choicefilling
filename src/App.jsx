@@ -285,6 +285,19 @@ export default function App() {
     syncToCloud([]);
   }, [syncToCloud]);
 
+  // Update the note on a single priority list item, then sync to cloud.
+  // Setting note to '' or undefined removes the field from the JSON payload.
+  const handleNoteChange = useCallback((itemId, note) => {
+    const prev = priorityListRef.current;
+    const next = prev.map((item) =>
+      item.id === itemId
+        ? { ...item, note: note || undefined }  // undefined is omitted by JSON.stringify
+        : item
+    );
+    setPriorityList(next);
+    syncToCloud(next);
+  }, [syncToCloud]);
+
   const handleLogout = useCallback(async () => {
     try { await signOut(); } catch (err) { console.warn('[App] Sign-out error:', err.message); }
     // onAuthStateChange SIGNED_OUT resets all state
@@ -366,6 +379,7 @@ export default function App() {
               onRemove={handleRemove}
               onClear={handleClear}
               onReorder={handleReorder}
+              onNoteChange={handleNoteChange}
               userRank={userRank}
               onRankChange={handleRankChange}
               mode={mode}
@@ -380,6 +394,7 @@ export default function App() {
               onReorder={handleReorder}
               onRemove={handleRemove}
               onClear={handleClear}
+              onNoteChange={handleNoteChange}
             />
           }
         />

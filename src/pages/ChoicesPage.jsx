@@ -16,11 +16,12 @@ import {
 import { CSS } from '@dnd-kit/utilities';
 import { deriveAllRounds } from '../utils/groupRows';
 import ExportButton from '../components/ExportButton';
+import NoteEditor from '../components/NoteEditor';
 import { useIsMobile } from '../hooks/useIsMobile';
 
 // ── Desktop sortable row (uses useSortable — must be inside DndContext) ───────
 
-function SortableRow({ item, index, allRounds, onRemove }) {
+function SortableRow({ item, index, allRounds, onRemove, onNoteChange }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
     useSortable({ id: item.id });
 
@@ -55,14 +56,14 @@ function SortableRow({ item, index, allRounds, onRemove }) {
       <td className="hidden print:table-cell px-2 py-1.5 text-sm font-bold text-gray-800 whitespace-nowrap">
         {index + 1}
       </td>
-      <RowCells item={item} allRounds={allRounds} onRemove={onRemove} isMobile={false} />
+      <RowCells item={item} allRounds={allRounds} onRemove={onRemove} isMobile={false} onNoteChange={onNoteChange} />
     </tr>
   );
 }
 
 // ── Mobile row (plain tr — no DnD hooks) ─────────────────────────────────────
 
-function MobileRow({ item, index, total, allRounds, onRemove, onMoveUp, onMoveDown }) {
+function MobileRow({ item, index, total, allRounds, onRemove, onMoveUp, onMoveDown, onNoteChange }) {
   const isFirst = index === 0;
   const isLast  = index === total - 1;
 
@@ -96,18 +97,23 @@ function MobileRow({ item, index, total, allRounds, onRemove, onMoveUp, onMoveDo
       <td className="hidden print:table-cell px-2 py-1.5 text-sm font-bold text-gray-800 whitespace-nowrap">
         {index + 1}
       </td>
-      <RowCells item={item} allRounds={allRounds} onRemove={onRemove} isMobile={true} />
+      <RowCells item={item} allRounds={allRounds} onRemove={onRemove} isMobile={true} onNoteChange={onNoteChange} />
     </tr>
   );
 }
 
-// ── Shared row cells (institute, branch, quota, seat type, ranks, remove) ─────
+// ── Shared row cells (institute, branch, quota, seat type, ranks, note, remove) ─
 
-function RowCells({ item, allRounds, onRemove, isMobile }) {
+function RowCells({ item, allRounds, onRemove, isMobile, onNoteChange }) {
   return (
     <>
-      <td className="px-2 sm:px-3 py-2.5 text-xs text-slate-200 font-semibold print:text-gray-900 print:text-sm min-w-[130px]">
+      <td className="px-2 sm:px-3 py-2.5 text-xs text-slate-200 font-semibold print:text-gray-900 print:text-sm min-w-[130px] align-top">
         {item.institute}
+        {/* Inline note editor — displayed/edited below institute name */}
+        <NoteEditor
+          note={item.note}
+          onSave={(note) => onNoteChange(item.id, note)}
+        />
       </td>
       <td className="px-2 sm:px-3 py-2.5 text-xs text-indigo-300 print:text-gray-700 print:text-sm min-w-[130px]">
         {item.program}
@@ -153,7 +159,7 @@ function RowCells({ item, allRounds, onRemove, isMobile }) {
 
 // ── Page ─────────────────────────────────────────────────────────────────────
 
-export default function ChoicesPage({ priorityList, onReorder, onRemove, onClear }) {
+export default function ChoicesPage({ priorityList, onReorder, onRemove, onClear, onNoteChange }) {
   const isMobile = useIsMobile();
 
   // Sensors always defined (hook rules)
@@ -211,6 +217,7 @@ export default function ChoicesPage({ priorityList, onReorder, onRemove, onClear
           onRemove={onRemove}
           onMoveUp={() => moveUp(index)}
           onMoveDown={() => moveDown(index)}
+          onNoteChange={onNoteChange}
         />
       ))}
     </tbody>
@@ -227,6 +234,7 @@ export default function ChoicesPage({ priorityList, onReorder, onRemove, onClear
             index={index}
             allRounds={allRounds}
             onRemove={onRemove}
+            onNoteChange={onNoteChange}
           />
         ))}
       </tbody>

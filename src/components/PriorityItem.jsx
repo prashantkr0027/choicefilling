@@ -2,12 +2,13 @@ import React from 'react';
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { sortedRoundEntries } from '../utils/groupRows';
+import NoteEditor from './NoteEditor';
 
 function abbrevRound(round) {
   return round.replace(/round\s*/i, 'R');
 }
 
-export default function PriorityItem({ item, index, onRemove }) {
+export default function PriorityItem({ item, index, onRemove, onNoteChange }) {
   const {
     attributes,
     listeners,
@@ -57,6 +58,7 @@ export default function PriorityItem({ item, index, onRemove }) {
 
       {/* Content */}
       <div className="flex-1 min-w-0">
+        {/* Badges */}
         <div className="flex items-center gap-1.5 mb-0.5 flex-wrap">
           {item.source === 'CSAB' && (
             <span className="text-[9px] font-black px-1.5 py-0.5 rounded border tracking-wide bg-amber-500/20 text-amber-300 border-amber-500/40">
@@ -78,6 +80,7 @@ export default function PriorityItem({ item, index, onRemove }) {
           {item.program}
         </p>
 
+        {/* Per-round ranks */}
         <div className="flex flex-wrap gap-x-3 gap-y-0.5">
           {rounds.map(([round, data]) => (
             <span key={round} className="text-[9px] font-mono text-slate-500 whitespace-nowrap">
@@ -87,6 +90,12 @@ export default function PriorityItem({ item, index, onRemove }) {
             </span>
           ))}
         </div>
+
+        {/* ── Note editor ───────────────────────────────────────────────────── */}
+        <NoteEditor
+          note={item.note}
+          onSave={(note) => onNoteChange(item.id, note)}
+        />
       </div>
 
       {/* Remove — 44px touch target */}

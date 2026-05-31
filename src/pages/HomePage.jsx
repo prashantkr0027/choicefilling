@@ -36,7 +36,7 @@ const DEFAULT_FILTERS = {
 
 const PAGE_SIZE = 60;
 
-export default function HomePage({ priorityList, onAdd, onRemove, onClear, onReorder, userRank, onRankChange, mode }) {
+export default function HomePage({ priorityList, onAdd, onRemove, onClear, onReorder, onNoteChange, userRank, onRankChange, mode }) {
   const isMobile = useIsMobile();
 
   const [allRows,        setAllRows]        = useState([]);
@@ -345,6 +345,7 @@ export default function HomePage({ priorityList, onAdd, onRemove, onClear, onReo
             onRemove={onRemove}
             onClear={onClear}
             onReorder={onReorder}
+            onNoteChange={onNoteChange}
             isMobile={isMobile}
           />
           <ExportButton items={priorityList} />

@@ -1,5 +1,6 @@
 import React from 'react';
 import { sortedRoundEntries } from '../utils/groupRows';
+import NoteEditor from './NoteEditor';
 
 function abbrevRound(round) {
   return round.replace(/round\s*/i, 'R');
@@ -17,6 +18,7 @@ export default function MobilePriorityItem({
   onRemove,
   onMoveUp,
   onMoveDown,
+  onNoteChange,
 }) {
   const rounds = sortedRoundEntries(item.rounds || {});
 
@@ -49,6 +51,7 @@ export default function MobilePriorityItem({
 
       {/* Content */}
       <div className="flex-1 min-w-0">
+        {/* Badges */}
         <div className="flex items-center gap-1.5 mb-0.5 flex-wrap">
           {item.source === 'CSAB' && (
             <span className="text-[9px] font-black px-1.5 py-0.5 rounded border tracking-wide bg-amber-500/20 text-amber-300 border-amber-500/40">
@@ -70,6 +73,7 @@ export default function MobilePriorityItem({
           {item.program}
         </p>
 
+        {/* Per-round ranks */}
         <div className="flex flex-wrap gap-x-3 gap-y-0.5">
           {rounds.map(([round, data]) => (
             <span key={round} className="text-[9px] font-mono text-slate-500 whitespace-nowrap">
@@ -79,10 +83,16 @@ export default function MobilePriorityItem({
             </span>
           ))}
         </div>
+
+        {/* ── Note editor ───────────────────────────────────────────────────── */}
+        <NoteEditor
+          note={item.note}
+          onSave={(note) => onNoteChange(item.id, note)}
+        />
       </div>
 
       {/* Up / Down / Remove controls */}
-      <div className="flex-shrink-0 flex flex-col items-center justify-center gap-0.5 -mr-1">
+      <div className="flex-shrink-0 flex flex-col items-center justify-start gap-0.5 -mr-1 pt-0.5">
         {arrowBtn('▲', onMoveUp,   isFirst, 'Move up')}
         {arrowBtn('▼', onMoveDown, isLast,  'Move down')}
         <button

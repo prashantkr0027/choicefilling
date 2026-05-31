@@ -10,7 +10,7 @@ import MobilePriorityItem from './MobilePriorityItem';
 
 // ── Desktop drop-zone wrapper (requires DndContext) ───────────────────────────
 
-function DesktopPriorityList({ items, onRemove }) {
+function DesktopPriorityList({ items, onRemove, onNoteChange }) {
   const { setNodeRef, isOver } = useDroppable({ id: 'priority-drop-zone' });
 
   return (
@@ -32,7 +32,13 @@ function DesktopPriorityList({ items, onRemove }) {
       ) : (
         <SortableContext items={items.map((i) => i.id)} strategy={verticalListSortingStrategy}>
           {items.map((item, index) => (
-            <PriorityItem key={item.id} item={item} index={index} onRemove={onRemove} />
+            <PriorityItem
+              key={item.id}
+              item={item}
+              index={index}
+              onRemove={onRemove}
+              onNoteChange={onNoteChange}
+            />
           ))}
         </SortableContext>
       )}
@@ -42,7 +48,7 @@ function DesktopPriorityList({ items, onRemove }) {
 
 // ── Mobile list (no DndContext required) ──────────────────────────────────────
 
-function MobilePriorityItemList({ items, onRemove, onReorder }) {
+function MobilePriorityItemList({ items, onRemove, onReorder, onNoteChange }) {
   const moveUp = useCallback((index) => {
     if (index === 0) return;
     onReorder(arrayMove(items, index, index - 1));
@@ -74,6 +80,7 @@ function MobilePriorityItemList({ items, onRemove, onReorder }) {
             onRemove={onRemove}
             onMoveUp={() => moveUp(index)}
             onMoveDown={() => moveDown(index)}
+            onNoteChange={onNoteChange}
           />
         ))
       )}
@@ -93,7 +100,7 @@ function EmptyState({ isMobile }) {
         <p className="text-slate-400 text-sm font-medium">No choices yet</p>
         <p className="text-slate-600 text-xs mt-1">
           {isMobile
-            ? <>Tap <span className="text-indigo-400">+ Add to Priority List</span><br />on any card above</>
+            ? <><span>Tap </span><span className="text-indigo-400">+ Add to Priority List</span><br />on any card above</>
             : <>Drag cards here or click <span className="text-indigo-400">+</span> to add</>
           }
         </p>
@@ -104,7 +111,7 @@ function EmptyState({ isMobile }) {
 
 // ── Public export ─────────────────────────────────────────────────────────────
 
-export default function PriorityList({ items, onRemove, onClear, onReorder, isMobile }) {
+export default function PriorityList({ items, onRemove, onClear, onReorder, onNoteChange, isMobile }) {
   return (
     <div className="flex flex-col h-full">
       {/* Header */}
@@ -133,9 +140,9 @@ export default function PriorityList({ items, onRemove, onClear, onReorder, isMo
 
       {/* List body — desktop uses DnD, mobile uses ▲▼ buttons */}
       {isMobile ? (
-        <MobilePriorityItemList items={items} onRemove={onRemove} onReorder={onReorder} />
+        <MobilePriorityItemList items={items} onRemove={onRemove} onReorder={onReorder} onNoteChange={onNoteChange} />
       ) : (
-        <DesktopPriorityList items={items} onRemove={onRemove} />
+        <DesktopPriorityList items={items} onRemove={onRemove} onNoteChange={onNoteChange} />
       )}
     </div>
   );
