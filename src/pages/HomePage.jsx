@@ -15,7 +15,7 @@ import CutoffCard   from '../components/CutoffCard';
 import PriorityList from '../components/PriorityList';
 import ExportButton from '../components/ExportButton';
 import { loadAllBundledFiles, BUNDLED_FILES } from '../utils/parseHTML';
-import { groupRows } from '../utils/groupRows';
+import { groupRows, sortedRoundEntries } from '../utils/groupRows';
 import { useIsMobile } from '../hooks/useIsMobile';
 
 // ── Default filter state ───────────────────────────────────────────────────────
@@ -32,7 +32,34 @@ const DEFAULT_FILTERS = {
   minRank:   '',
   maxRank:   '',
   rankRound: 'Round 6',
+  // Sort
+  sortBy: 'default',  // 'default' | 'cr-asc' | 'cr-desc'
 };
+
+// ── Closing-rank sort helper ───────────────────────────────────────────────────
+// Returns the best available closing rank for an item.
+// Priority:
+//   1. Round 6 (JoSAA) or CSAB Round 3 (CSAB)
+//   2. Highest-numbered round that has CR data
+//   3. Infinity — so no-data items sort to the very end
+function getEffectiveCR(item, mode) {
+  const rounds      = item.rounds || {};
+  const preferred   = mode === 'csab' ? 'CSAB Round 3' : 'Round 6';
+  const parseCR     = (val) => parseInt(String(val ?? '').replace(/[^0-9]/g, ''), 10);
+
+  // 1. Preferred round
+  const prefCR = parseCR(rounds[preferred]?.closingRank);
+  if (!isNaN(prefCR) && prefCR > 0) return prefCR;
+
+  // 2. Latest round with data (sortedRoundEntries returns ascending → reverse)
+  const entries = sortedRoundEntries(rounds);
+  for (let i = entries.length - 1; i >= 0; i--) {
+    const cr = parseCR(entries[i][1].closingRank);
+    if (!isNaN(cr) && cr > 0) return cr;
+  }
+
+  return Infinity;  // no CR data → sort to end
+}
 
 const PAGE_SIZE = 60;
 
@@ -129,11 +156,25 @@ export default function HomePage({ priorityList, onAdd, onRemove, onClear, onReo
 
       return true;
     });
-  }, [groupedItems, filters]);
+  }, [groupedItems, filters, mode]);
+
+  // Apply sort on top of filtered results
+  const sortedItems = useMemo(() => {
+    if (filters.sortBy === 'default') return filteredItems;
+    const dir = filters.sortBy === 'cr-asc' ? 1 : -1;
+    return [...filteredItems].sort((a, b) => {
+      const crA = getEffectiveCR(a, mode);
+      const crB = getEffectiveCR(b, mode);
+      if (crA === Infinity && crB === Infinity) return 0;
+      if (crA === Infinity) return 1;   // no-data always last
+      if (crB === Infinity) return -1;
+      return (crA - crB) * dir;
+    });
+  }, [filteredItems, filters.sortBy, mode]);
 
   const paginatedItems = useMemo(
-    () => filteredItems.slice(0, page * PAGE_SIZE),
-    [filteredItems, page]
+    () => sortedItems.slice(0, page * PAGE_SIZE),
+    [sortedItems, page]
   );
 
   const priorityIds = useMemo(
@@ -152,6 +193,7 @@ export default function HomePage({ priorityList, onAdd, onRemove, onClear, onReo
     if (filters.institute.trim())        count++;
     if (filters.branch.trim())           count++;
     if (filters.minRank || filters.maxRank) count++;
+    if (filters.sortBy !== 'default')    count++;
     return count;
   }, [filters]);
 
@@ -178,7 +220,7 @@ export default function HomePage({ priorityList, onAdd, onRemove, onClear, onReo
     }
   }, [onAdd, onReorder, priorityList]);
 
-  const hasMore = paginatedItems.length < filteredItems.length;
+  const hasMore = paginatedItems.length < sortedItems.length;
 
   const resetFilters = useCallback(() => {
     setFilters(DEFAULT_FILTERS);
@@ -326,7 +368,7 @@ export default function HomePage({ priorityList, onAdd, onRemove, onClear, onReo
                   onClick={() => setPage((p) => p + 1)}
                   className="px-5 sm:px-6 py-2.5 rounded-xl border border-slate-700 text-slate-300 text-sm hover:border-indigo-500 hover:text-indigo-300 transition-all duration-200 min-h-[44px]"
                 >
-                  Load more ({filteredItems.length - paginatedItems.length} remaining)
+                  Load more ({sortedItems.length - paginatedItems.length} remaining)
                 </button>
               </div>
             )}

@@ -166,6 +166,34 @@ export default function FilterBar({
   return (
     <div className="flex flex-col gap-3.5">
 
+      {/* ══ SORT BY ════════════════════════════════════════════════════════════ */}
+      <div>
+        <div className="flex items-center justify-between mb-1.5">
+          <p className={labelClass}>Sort By</p>
+          {filters.sortBy !== 'default' && (
+            <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30">
+              Active
+            </span>
+          )}
+        </div>
+        <select
+          value={filters.sortBy}
+          onChange={(e) => onFilterChange('sortBy', e.target.value)}
+          className="
+            w-full bg-slate-800/80 border border-slate-700 rounded-lg
+            px-3 py-2 text-[12px] text-slate-200
+            focus:outline-none focus:ring-2 focus:ring-indigo-500/60 focus:border-indigo-500/50
+            transition-all duration-200 min-h-[40px] cursor-pointer
+            appearance-none
+          "
+          style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2394a3b8' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E")`, backgroundRepeat: 'no-repeat', backgroundPosition: 'right 10px center' }}
+        >
+          <option value="default">Default (original order)</option>
+          <option value="cr-asc">Closing Rank ↑  (Low → High)</option>
+          <option value="cr-desc">Closing Rank ↓  (High → Low)</option>
+        </select>
+      </div>
+
       {/* ══ RANK SECTION ══════════════════════════════════════════════════════ */}
       <div className="rounded-xl border border-slate-700/60 bg-slate-800/30 p-3 flex flex-col gap-3">
 
